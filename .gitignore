@@ -1,0 +1,10 @@
+# Build output
+/onrdp
+/dist/
+
+# Local app data written during development
+/data/
+
+# Native dependency SDK and local diagnostics
+/.native/
+/.onrdp-diagnostic/

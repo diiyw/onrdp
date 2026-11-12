@@ -1,0 +1,22 @@
+{
+  "entry": "main.json",
+  "clearColor": "#0f1216",
+  "engine": {},
+  "scenes": [
+    "main.json"
+  ],
+  "viewport": {
+    "mode": "adaptive",
+    "width": 1024,
+    "height": 700
+  },
+  "window": {
+    "tps": null,
+    "vsync": null,
+    "fps": null,
+    "title": "OnRDP",
+    "icon": "app/icons/icon.svg",
+    "height": 700,
+    "width": 1024
+  }
+}

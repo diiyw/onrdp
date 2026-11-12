@@ -1,0 +1,37 @@
+{
+  "name": "OnRDP",
+  "behavior": "Mod",
+  "space": "ui",
+  "components": {
+    "html": {
+      "resource": "page"
+    },
+    "input": {
+      "pointer": true,
+      "keyboard": true,
+      "text": true
+    }
+  },
+  "resources": {
+    "page": {
+      "kind": "html",
+      "path": "app.html"
+    },
+    "toolbar-expand": {
+      "kind": "image",
+      "path": "icons/toolbar-expand.svg"
+    },
+    "toolbar-window": {
+      "kind": "image",
+      "path": "icons/toolbar-window.svg"
+    },
+    "icon-license": {
+      "kind": "data",
+      "path": "icons/LICENSE"
+    },
+    "phosphor-license": {
+      "kind": "data",
+      "path": "icons/PHOSPHOR-LICENSE"
+    }
+  }
+}
