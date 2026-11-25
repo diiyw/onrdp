@@ -92,14 +92,17 @@ def build_library(target):
     build = CACHE / f"decoder-{FFMPEG}-{target}-{digest}"
     build.mkdir(exist_ok=True)
     install = build / "install"
+    configure = source / "configure"
+    prefix = str(install)
+    bash, make = "bash", "make"
+    if sys.platform == "win32" and os.environ.get("MSYSTEM"):
+        configure, prefix = subprocess.check_output(
+            ["cygpath", "-u", str(configure), prefix], text=True).splitlines()
+        msys_bin = Path(subprocess.check_output(["cygpath", "-w", "/usr/bin"], text=True).strip())
+        bash, make = msys_bin / "bash.exe", msys_bin / "make.exe"
     if not (build / "ffbuild/config.mak").exists():
-        configure = source / "configure"
-        prefix = str(install)
-        if sys.platform == "win32" and os.environ.get("MSYSTEM"):
-            configure, prefix = subprocess.check_output(
-                ["cygpath", "-u", str(configure), prefix], text=True).splitlines()
-        run("bash", configure, "--prefix=" + prefix, *options, cwd=build)
-    run("make", "-j" + os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL", "8"), "install", cwd=build)
+        run(bash, configure, "--prefix=" + prefix, *options, cwd=build)
+    run(make, "-j" + os.environ.get("CMAKE_BUILD_PARALLEL_LEVEL", "8"), "install", cwd=build)
     env = dict(os.environ, PKG_CONFIG_LIBDIR=str(install / "lib/pkgconfig"), PKG_CONFIG_PATH="")
     flags = shlex.split(subprocess.check_output(
         ["pkg-config", "--cflags", "--libs", "--static", "libavcodec", "libswscale"], env=env, text=True))

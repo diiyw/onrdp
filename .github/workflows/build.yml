@@ -126,6 +126,7 @@ jobs:
             diffutils
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-python
             mingw-w64-ucrt-x86_64-nasm
             mingw-w64-ucrt-x86_64-freerdp
       - name: Build bundled application

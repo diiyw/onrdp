@@ -22,7 +22,9 @@ if [[ -n "${ONRDP_RELEASE_VERSION:-}" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $ONRDP_RELEASE_VERSION" "$plist"
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $ONRDP_RELEASE_VERSION" "$plist"
 fi
-go run ./scripts/check-resources.go dist/macos/OnRDP.app/Contents/Resources
+# The standalone checker links the Onix graphics package without the app's platform code.
+CGO_LDFLAGS="${CGO_LDFLAGS:--O2 -g} -framework CoreGraphics" \
+    go run ./scripts/check-resources.go dist/macos/OnRDP.app/Contents/Resources
 arch="${GOARCH:-$(go env GOARCH)}"
 case "$arch" in
     arm64) scrcpy_target=macos-aarch64 ;;
