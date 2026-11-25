@@ -30,11 +30,29 @@ func TestQualityResolution(t *testing.T) {
 	}
 }
 
-func TestQualityCapsPendingNativeResize(t *testing.T) {
-	s := newNativeSession(New(nil))
-	s.quality = QualitySmooth
-	s.ResizeDesktop(3840, 2160)
-	if s.desktopWidth != 1280 || s.desktopHeight != 720 {
-		t.Fatalf("fullscreen bypassed quality cap: %dx%d", s.desktopWidth, s.desktopHeight)
+func TestExplicitNativeResizeOverridesQualityOnReconnect(t *testing.T) {
+	for _, quality := range []Quality{QualitySmooth, QualityBalanced, QualityHigh} {
+		t.Run(string(quality), func(t *testing.T) {
+			c := New(nil)
+			s := newNativeSession(c)
+			c.rdp, c.state = s, StateConnecting
+			defer c.Close()
+			cfg := Config{Width: 2560, Height: 1440, Quality: quality}
+			windowWidth, windowHeight := quality.Resolution(cfg.Width, cfg.Height)
+			if w, h := s.desktopResolution(cfg); w != windowWidth || h != windowHeight {
+				t.Fatalf("initial windowed resolution=%dx%d, want %dx%d", w, h, windowWidth, windowHeight)
+			}
+			c.ResizeDesktop(3840, 2160)
+			if s.desktopWidth != 3840 || s.desktopHeight != 2160 {
+				t.Fatalf("pending fullscreen resolution=%dx%d", s.desktopWidth, s.desktopHeight)
+			}
+			if w, h := s.desktopResolution(cfg); w != 3840 || h != 2160 {
+				t.Fatalf("reconnected fullscreen resolution=%dx%d", w, h)
+			}
+			c.ResizeDesktop(windowWidth, windowHeight)
+			if w, h := s.desktopResolution(cfg); w != windowWidth || h != windowHeight {
+				t.Fatalf("restored windowed resolution=%dx%d, want %dx%d", w, h, windowWidth, windowHeight)
+			}
+		})
 	}
 }

@@ -8,14 +8,19 @@ import (
 	"github.com/onix-engine/onix/module"
 	"github.com/onix-engine/onix/project"
 	"github.com/onix-engine/onix/scene"
+	"github.com/onix-engine/onix/ui"
 	htmlui "github.com/onix-engine/onix/ui/html"
-	"github.com/onix-engine/onix/window"
 )
+
+func main() {
+	if err := start(); err != nil {
+		panic(err)
+	}
+}
 
 // desktopHost exposes native-window capabilities without coupling the UI to
 // the application object. It also owns the additional desktop input forwarding.
 func desktopHost(app *onix.App, spec project.ProjectSpec) *module.Host {
-	app.SetViewportMode(window.ViewportModeExpand)
 	// Onix composites UI at logical viewport resolution, then scales
 	// that cache to the native surface. Dense frame updates bypass the cache,
 	// so a HiDPI remote desktop otherwise alternates between blurred cached
@@ -44,10 +49,12 @@ func desktopHost(app *onix.App, spec project.ProjectSpec) *module.Host {
 		},
 		SetWindowDragRegion:  app.SetWindowDragRegion,
 		SetWindowInputRegion: app.SetWindowInputRegion,
-		OnCloseRequested:     func(f func() bool) { app.OnCloseRequested(f) },
-		OpenFolder:           app.OpenFolder,
-		OpenFile:             app.OpenFile,
-		OpenFiles:            app.OpenFiles,
+		OnCloseRequested: func(f func() bool) {
+			app.OnCloseRequested(func() bool { return desktopCloseRequested(app, f) })
+		},
+		OpenFolder: app.OpenFolder,
+		OpenFile:   app.OpenFile,
+		OpenFiles:  app.OpenFiles,
 		SetClipboardText: func(s string) bool {
 			return app.Context != nil && app.SetClipboardText(s)
 		},
@@ -64,6 +71,29 @@ func desktopHost(app *onix.App, spec project.ProjectSpec) *module.Host {
 			return app.TakeMouseDelta()
 		},
 	}
+}
+
+// A native title-bar close can consume the mouse release outside the content
+// view. When the module keeps the window open, release the host's pointer too;
+// clearing only the module's remote buttons leaves the next press suppressed.
+func desktopCloseRequested(app *onix.App, requested func() bool) bool {
+	if requested == nil || requested() {
+		return true
+	}
+	if state, ok := app.World.GetResource[*input.State](); ok && state != nil {
+		pointer := state.Pointer()
+		for _, button := range []input.MouseButton{input.MouseLeft, input.MouseRight, input.MouseMiddle} {
+			state.ReleaseMouse(button, float64(pointer.X), float64(pointer.Y))
+		}
+		state.SetCursor(input.CursorDefault)
+	}
+	ui.FocusControl(app.World, 0)
+	if app.Context != nil {
+		app.SetMouseCaptured(false)
+		app.Context.SetCursor(input.CursorDefault)
+	}
+	app.RequestRender()
+	return false
 }
 
 // installDesktopInput forwards mouse buttons other than the left one. The

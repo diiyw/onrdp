@@ -2,6 +2,8 @@ package app
 
 import (
 	"fmt"
+	"maps"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,6 +17,8 @@ import (
 	"onrdp/internal/i18n"
 	"onrdp/internal/platform"
 	"onrdp/internal/rdpclient"
+	"onrdp/internal/rustdesk"
+	"onrdp/internal/scrcpy"
 	"onrdp/internal/store"
 )
 
@@ -25,7 +29,7 @@ type Mod struct {
 	fields         map[string]string
 	nodes          map[string]module.HTMLNode
 	vault          *store.Vault
-	client         *rdpclient.Client
+	client         remoteClient
 	frame          *frameTexture
 	root           module.HTMLNode
 	host           *module.Host
@@ -36,21 +40,33 @@ type Mod struct {
 	page           string
 	draft          store.Host
 	listSignature  string
+	lastRowClick   rowClick
 	statusLine     string
 	status         rdpclient.Snapshot
 	sessionQuality rdpclient.Quality
 	remoteX        int
 	remoteY        int
 	elapsed        float32
+	groupFilter    string
 	favoriteOnly   bool
 	connected      bool
 	pressed        [3]bool
 	dragging       bool
 	dirty          bool
 	focusInput     bool
-	clipboard      bool
+	focusHostName  bool
 	fullscreen     bool
 	toolbar        floatingToolbar
+	window         *platform.DesktopWindow
+	sessionWindows []*platform.DesktopWindow
+	android        androidPicker
+	mirror         *androidMirror
+}
+
+type rowClick struct {
+	id   string
+	at   time.Time
+	x, y float32
 }
 
 func (m *Mod) node(id string) module.HTMLNode {
@@ -82,7 +98,9 @@ func (m *Mod) Install(c *module.Context) error {
 		return err
 	}
 	m.host = c.Host()
+	m.window = platform.WindowFor(m.host)
 	m.nodes = make(map[string]module.HTMLNode)
+
 	if m.host != nil {
 		m.hide("rdp-fullscreen", m.host.ToggleFullscreen == nil)
 		if m.host.OnCloseRequested != nil {
@@ -96,22 +114,25 @@ func (m *Mod) Install(c *module.Context) error {
 	dir, key, keyErr := platform.Storage()
 	if keyErr != nil {
 		m.showFatal(keyErr)
+		m.publishSessionState(rdpclient.StateClosed)
 		return nil
 	}
 	m.vault, err = store.Open(dir, key)
 	clear(key)
 	if err != nil {
 		m.showFatal(err)
+		m.publishSessionState(rdpclient.StateClosed)
 		return nil
 	}
-	m.client = rdpclient.New(func() {
-		if host := c.Host(); host != nil && host.RequestRender != nil {
-			host.RequestRender()
-		}
-	})
-	// The protocol delivers remote clipboard text on its own goroutine; the
-	// callback only marks it as pending, and the loop thread mirrors it.
-	m.client.OnClipboardText(func(string) { m.clipboard = true })
+	m.localize()
+	m.applyTheme(m.vault.Settings().DarkTheme)
+	m.page = "hosts"
+	m.dirty = true
+	if m.sessionLauncher() {
+		m.settings()
+		m.renderLists()
+		return nil
+	}
 	m.frame = &frameTexture{}
 	if surface, ok := c.Content().Get[htmlui.Surface](c.Content().Root()); ok && surface.Images != nil {
 		// Reuse the project provider for every non-framebuffer source so the
@@ -123,22 +144,37 @@ func (m *Mod) Install(c *module.Context) error {
 			surface.Images.Provider = m.frame
 		}
 	}
-	platform.Register(platform.Hooks{
-		Language: func() string { return m.vault.Settings().Language },
-		Active: func() int {
-			if m.connected {
-				return 1
-			}
-			return 0
-		},
-		Resume: func() {},
-		Close:  func() { m.client.Close() },
-	})
-	m.localize()
-	m.page = "hosts"
-	m.dirty = true
-	m.settings()
-	m.renderLists()
+	if m.sessionChild() && m.window.Host.Protocol == store.Android {
+		m.startAndroidChild(c)
+		return nil
+	}
+	wake := func() {
+		if host := c.Host(); host != nil && host.RequestRender != nil {
+			host.RequestRender()
+		}
+	}
+	if m.sessionChild() && m.window.Host.Protocol == store.RustDesk && rustDeskSupported {
+		m.client = newRustDeskClient(wake, m.window.Host.RustDeskNetwork)
+	} else {
+		m.client = rdpclient.New(wake)
+	}
+	if m.sessionChild() {
+		m.startSessionChild()
+	} else {
+		platform.Register(platform.Hooks{
+			Language: func() string { return m.vault.Settings().Language },
+			Active: func() int {
+				if m.connected {
+					return 1
+				}
+				return 0
+			},
+			Resume: func() {},
+			Close:  func() { m.client.Close() },
+		})
+		m.settings()
+		m.renderLists()
+	}
 	return nil
 }
 
@@ -150,6 +186,19 @@ func (m *Mod) showFatal(err error) {
 func (m *Mod) Update(c *module.Context, tick module.Tick) error {
 	if m.vault == nil {
 		return nil
+	}
+	if m.window != nil && m.window.PendingTheme != nil {
+		m.applyTheme(*m.window.PendingTheme)
+		m.window.PendingTheme = nil
+	}
+	m.syncAndroidDevices()
+	if m.page == "edit" && m.focusHostName {
+		if field, ok := c.Content().HTMLControl(c.Content().Root(), "field-name"); ok {
+			m.focusHostName = !c.Content().Focus(field)
+		}
+	}
+	if !m.sessionChild() && m.page != "rdp" {
+		m.launcherKeys(c)
 	}
 	host := c.Host()
 	if m.page == "rdp" && m.confirm == "" {
@@ -170,9 +219,13 @@ func (m *Mod) Update(c *module.Context, tick module.Tick) error {
 	// throttle below deliberately does not gate the session flush: a dropped
 	// flush would leave the app idle with a stale picture.
 	if m.page == "rdp" {
-		m.syncSession(c)
-		m.syncResolution()
-		m.flushFrame()
+		if m.mirror != nil {
+			m.syncMirror()
+		} else {
+			m.syncSession(c)
+			m.syncResolution()
+			m.flushFrame()
+		}
 		m.layoutToolbar()
 	}
 
@@ -212,7 +265,6 @@ func (m *Mod) syncSession(c *module.Context) {
 		if m.clipboardShared() && c.Host() != nil && c.Host().SetClipboardText != nil {
 			c.Host().SetClipboardText(text)
 		}
-		m.clipboard = false
 		m.dirty = true
 	}
 	status := m.client.Status()
@@ -220,6 +272,7 @@ func (m *Mod) syncSession(c *module.Context) {
 		m.dirty = true
 	}
 	m.status = status
+	m.publishSessionState(status.State)
 	line := m.statusText(status)
 	if line != m.statusLine {
 		m.statusLine = line
@@ -262,42 +315,76 @@ func (m *Mod) statusText(status rdpclient.Snapshot) string {
 }
 
 func (m *Mod) route(page string) {
+	m.lastRowClick = rowClick{}
 	m.toolbar.dragging = false
 	m.hide("rdp-tooltip", true)
 	if m.page == "rdp" && page != "rdp" && m.fullscreen {
 		m.toggleFullscreen()
 	}
 	m.page = page
-	shellClass := "shell"
-	if page == "rdp" {
-		shellClass += " remote"
-	}
-	m.class("shell", shellClass)
+	m.focusHostName = page == "edit"
 	m.focusInput = page == "rdp"
 	for _, p := range []string{"hosts", "sessions", "settings", "edit", "rdp"} {
 		m.hide(p+"-page", p != page)
 	}
-	m.hide("bottom-nav", page == "edit" || page == "rdp")
-	for _, p := range []string{"hosts", "sessions", "settings"} {
-		class := "nav-item"
-		if page == p {
-			class += " selected"
-		}
-		m.class("nav-"+p, class)
-		current := "false"
-		if page == p {
-			current = "page"
-		}
-		m.node("nav-"+p).SetAttribute("aria-current", current)
-	}
+	m.hide("sidebar", page == "rdp")
 	m.dirty = true
+}
+
+func selectSource(node module.HTMLNode, selected bool) {
+	class, current := "nav-item", "false"
+	if selected {
+		class, current = "nav-item selected", "page"
+	}
+	node.SetAttribute("class", class)
+	node.SetAttribute("aria-current", current)
+}
+
+func (m *Mod) renderSources(hosts []store.Host) {
+	counts := make(map[string]int)
+	for _, h := range hosts {
+		if h.Group != "" {
+			counts[h.Group]++
+		}
+	}
+	if counts[m.groupFilter] == 0 {
+		m.groupFilter = ""
+	}
+	inLibrary := m.page == "hosts" || m.page == "edit"
+	selectSource(m.node("nav-hosts"), inLibrary && !m.favoriteOnly && m.groupFilter == "")
+	selectSource(m.node("nav-favorites"), inLibrary && m.favoriteOnly)
+	selectSource(m.node("nav-sessions"), m.page == "sessions")
+	selectSource(m.node("nav-settings"), m.page == "settings")
+	title := m.groupFilter
+	if m.favoriteOnly {
+		title = m.tr("已收藏")
+	} else if title == "" {
+		title = m.tr("全部主机")
+	}
+	m.text("collection-title", title)
+	groups := m.node("group-list")
+	groups.Clear()
+	m.hide("source-groups", len(counts) == 0)
+	for _, name := range slices.Sorted(maps.Keys(counts)) {
+		row := m.node("group-template").Clone()
+		row.SetAttribute("id", "group:"+name)
+		row.SetAttribute("title", name)
+		selectSource(row, inLibrary && m.groupFilter == name)
+		setNode(row, "group-name", name)
+		setNode(row, "group-count", strconv.Itoa(counts[name]))
+		groups.Append(row)
+	}
 }
 
 func (m *Mod) toast(err error) {
 	if err == nil {
 		return
 	}
-	m.text("toast", i18n.ErrorText(m.language, err))
+	m.showToast(i18n.ErrorText(m.language, err))
+}
+
+func (m *Mod) showToast(message string) {
+	m.text("toast", message)
 	m.hide("toast", false)
 	m.toastUntil = time.Now().Add(4 * time.Second)
 }
@@ -329,31 +416,47 @@ func (m *Mod) renderLists() {
 	}
 	data := m.vault.Snapshot()
 	var signature strings.Builder
-	fmt.Fprintf(&signature, "%s/%t/", m.query, m.favoriteOnly)
+	fmt.Fprintf(&signature, "%q/%q/%q/%t/", m.page, m.query, m.groupFilter, m.favoriteOnly)
 	for _, h := range data.Hosts {
-		fmt.Fprintf(&signature, "%s:%s:%s:%s:%s:%d:%t/", h.ID, h.Name, h.Address, h.User, h.Domain, h.Port, h.Favorite)
+		fmt.Fprintf(&signature, "%q:%q:%q:%q:%q:%d:%t:%q:%q:%d:%d/", h.ID, h.Name, h.Address, h.User, h.Domain, h.Port, h.Favorite, h.Group, h.Protocol, h.Width, h.Height)
 	}
 	fmt.Fprintf(&signature, "%s:%s:%t/", m.statusLine, m.selected, m.connected)
+	connected := 0
+	if m.connected {
+		connected = 1
+	}
+	activeByHost := make(map[string]rdpclient.State)
+	for _, session := range m.sessionWindows {
+		state := session.State
+		fmt.Fprintf(&signature, "%s:%d:%v/", session.ID, state, session.Decoder)
+		if state == rdpclient.StateConnecting || state == rdpclient.StateConnected {
+			connected++
+			activeByHost[session.Host.ID] = max(state, activeByHost[session.Host.ID])
+		}
+	}
 	next := signature.String()
 	if next == m.listSignature {
 		return
 	}
 	m.listSignature = next
+	m.renderSources(data.Hosts)
 
-	connected := 0
-	if m.connected {
-		connected = 1
-	}
 	m.text("active-count", m.tr("暂无连接"))
 	m.class("active-dot", "status-dot")
 	if connected > 0 {
 		m.text("active-count", m.tr("%d 个连接中", connected))
 		m.class("active-dot", "status-dot live")
 	}
-	m.text("session-count", strconv.Itoa(connected))
-	m.hide("session-count", connected == 0)
+	sessionCount := connected
+	if m.sessionLauncher() {
+		sessionCount = len(m.sessionWindows)
+	}
+	m.text("session-count", strconv.Itoa(sessionCount))
+	m.hide("session-count", sessionCount == 0)
 	m.text("session-summary", m.tr("连接过的桌面会显示在这里"))
-	if m.selected != "" {
+	if m.sessionLauncher() {
+		m.text("session-summary", m.tr("打开的远程桌面会显示在这里"))
+	} else if m.selected != "" {
 		if h, ok := m.findHost(m.selected); ok {
 			m.text("session-summary", m.tr("%d 个连接中 · %s", connected, h.Name))
 		}
@@ -373,7 +476,7 @@ func (m *Mod) renderLists() {
 	})
 	count := 0
 	for _, h := range hosts {
-		if m.favoriteOnly && !h.Favorite {
+		if (m.favoriteOnly && !h.Favorite) || (m.groupFilter != "" && h.Group != m.groupFilter) {
 			continue
 		}
 		if m.query != "" && !strings.Contains(strings.ToLower(h.Name+" "+h.Address+" "+h.Group), strings.ToLower(m.query)) {
@@ -383,21 +486,50 @@ func (m *Mod) renderLists() {
 		card := m.node("host-template").Clone()
 		card.SetAttribute("id", "host-"+h.ID)
 		setNode(card, "host-name", h.Name)
-		setNode(card, "host-address", h.User+"@"+h.Endpoint())
+
 		meta := h.Group
 		if meta == "" {
 			meta = m.tr("未分组")
 		}
-		width, height := h.Resolution()
-		meta = fmt.Sprintf("%s · %d × %d", meta, width, height)
-		setNode(card, "host-meta", meta)
-		setNode(card, "host-edit", m.tr("编辑"))
-		setNode(card, "host-favorite", m.tr("收藏"))
-		if h.ID == m.selected && m.connected {
-			setNode(card, "host-state", m.tr("已连接"))
+		switch h.Protocol {
+		case store.RustDesk:
+			setNode(card, "host-address", h.Address)
+			setNode(card, "host-detail", "RustDesk")
+		case store.Android:
+			setNode(card, "host-address", h.Address)
+			setNode(card, "host-detail", "Android")
+			if icon, ok := card.FindByID("host-device"); ok {
+				icon.SetAttribute("src", "icons/device-mobile.svg")
+			}
+		default:
+			setNode(card, "host-address", h.User+"@"+h.Endpoint())
+			width, height := h.Resolution()
+			setNode(card, "host-detail", fmt.Sprintf("RDP · %d × %d", width, height))
 		}
-		if h.Favorite {
-			setNode(card, "host-favorite", m.tr("已收藏"))
+		setNode(card, "host-meta", meta)
+		stateLabel := ""
+		if h.ID == m.selected && m.connected {
+			stateLabel = m.tr("已连接")
+		}
+		if state, ok := activeByHost[h.ID]; ok {
+			stateLabel = m.statusText(rdpclient.Snapshot{State: state})
+		}
+		if label, ok := card.FindByID("host-state"); ok && stateLabel != "" {
+			label.SetText(stateLabel)
+			label.SetHidden(false)
+		}
+		if button, ok := card.FindByID("host-favorite"); ok {
+			label := m.tr("收藏")
+			if h.Favorite {
+				label = m.tr("已收藏")
+			}
+			button.SetAttribute("aria-pressed", strconv.FormatBool(h.Favorite))
+			button.SetAttribute("aria-label", label)
+			button.SetAttribute("title", label)
+		}
+		if button, ok := card.FindByID("host-edit"); ok {
+			button.SetAttribute("aria-label", m.tr("编辑"))
+			button.SetAttribute("title", m.tr("编辑"))
 		}
 		setID(card, "host-connect", "connect:"+h.ID)
 		if n, ok := card.FindByID("connect:" + h.ID); ok {
@@ -409,43 +541,86 @@ func (m *Mod) renderLists() {
 	}
 	m.text("host-count", m.tr("%d 台主机", count))
 	m.hide("hosts-empty", count != 0)
-	filtered := m.query != "" || m.favoriteOnly
+	filtered := m.query != "" || m.favoriteOnly || m.groupFilter != ""
 	m.hide("empty-add", filtered)
 	if filtered {
 		m.text("empty-title", m.tr("没有找到主机"))
 		m.text("empty-description", m.tr("试试其他关键词，或切换到全部主机。"))
 	} else {
-		m.text("empty-title", m.tr("你的桌面，从这里开始"))
-		m.text("empty-description", m.tr("保存一台 Windows 主机，轻点即可连接。\n密码仅在本机加密保存。"))
+		m.text("empty-title", m.tr("尚未添加主机"))
+		m.text("empty-description", m.tr("添加一台主机，即可从列表打开连接。"))
 	}
 
 	sessions := m.node("session-list")
 	sessions.Clear()
+	if m.sessionLauncher() {
+		m.hide("sessions-empty", len(m.sessionWindows) > 0)
+		m.hide("close-all", len(m.sessionWindows) == 0)
+		for _, session := range m.sessionWindows {
+			status := session.State
+			state := m.statusText(rdpclient.Snapshot{State: status})
+			if status == rdpclient.StateClosed {
+				state = m.tr("已断开")
+			}
+			var card module.HTMLNode
+			if session.Host.Protocol == store.RustDesk {
+				card = m.sessionCard(session.ID, session.Host.Name, session.Host.Address, "RustDesk", state)
+			} else if session.Host.Protocol == store.Android {
+				card = m.sessionCard(session.ID, session.Host.Name, session.Host.Address, m.androidDecoder(session), state)
+			} else {
+				card = m.rdpSessionCard(session.ID, session.Host, state)
+			}
+			setID(card, "session-open", "session-window:"+session.ID)
+			sessions.Append(card)
+		}
+		return
+	}
 	h, hasSession := m.findHost(m.selected)
 	m.hide("sessions-empty", hasSession)
 	m.hide("close-all", !m.connected)
 	if hasSession {
-		card := m.node("session-template").Clone()
-		card.SetAttribute("id", "session-"+h.ID)
-		setNode(card, "session-name", h.Name)
-		setNode(card, "session-address", h.User+"@"+h.Endpoint())
 		state := m.statusLine
 		if state == "" {
 			state = m.tr("未连接")
 		}
-		setNode(card, "session-state", state)
-		width, height := h.Resolution()
-		setNode(card, "session-meta", fmt.Sprintf("%s · %d × %d", h.Address, width, height))
-		setNode(card, "session-close", m.tr("断开"))
+		card := m.rdpSessionCard(h.ID, h, state)
 		setID(card, "session-open", "session:"+h.ID)
-		setID(card, "session-close", "close:"+h.ID)
 		sessions.Append(card)
 	}
+}
+
+func (m *Mod) rdpSessionCard(id string, h store.Host, state string) module.HTMLNode {
+	width, height := h.Resolution()
+	return m.sessionCard(id, h.Name, h.User+"@"+h.Endpoint(), fmt.Sprintf("RDP · %d × %d", width, height), state)
+}
+
+func (m *Mod) sessionCard(id, name, address, meta, state string) module.HTMLNode {
+	card := m.node("session-template").Clone()
+	card.SetAttribute("id", "session-"+id)
+	setNode(card, "session-name", name)
+	setNode(card, "session-address", address)
+	setNode(card, "session-state", state)
+	setNode(card, "session-meta", meta)
+	setNode(card, "session-close", m.tr("断开"))
+	setID(card, "session-close", "close:"+id)
+	return card
 }
 
 func (m *Mod) openHost(id string, connect bool) {
 	h, ok := m.findHost(id)
 	if !ok {
+		return
+	}
+	if m.sessionLauncher() && connect {
+		m.openSessionWindow(h)
+		return
+	}
+	if h.Protocol == store.Android {
+		m.toast(i18n.NewError("Android 投屏仅适用于桌面版"))
+		return
+	}
+	if h.Protocol == store.RustDesk && (!m.sessionChild() || !rustDeskSupported) {
+		m.toast(i18n.NewError("当前平台不支持 RustDesk 连接"))
 		return
 	}
 	m.selected = id
@@ -485,6 +660,7 @@ func (m *Mod) connect(h store.Host) {
 	m.connected = true
 	m.statusLine = m.tr("正在连接…")
 	m.status = rdpclient.Snapshot{State: rdpclient.StateConnecting, Width: width, Height: height}
+	m.publishSessionState(rdpclient.StateConnecting)
 	m.hide("rdp-error", true)
 	m.hide("rdp-overlay", false)
 	m.text("rdp-overlay-text", m.tr("正在连接…"))
@@ -511,7 +687,7 @@ func (m *Mod) flushFrame() {
 }
 
 func (m *Mod) edit(c *module.Context, id string) {
-	h := store.Host{ID: store.NewID(), Port: 3389, Width: 1600, Height: 900, Clipboard: true}
+	h := store.Host{ID: store.NewID(), Group: m.groupFilter, Port: 3389, Width: 1600, Height: 900, Clipboard: true}
 	if id != "" {
 		var ok bool
 		h, ok = m.findHost(id)
@@ -520,10 +696,22 @@ func (m *Mod) edit(c *module.Context, id string) {
 		}
 	}
 	m.draft = h
+	m.hide("host-protocol", id != "" || !m.sessionLauncher())
+	m.hide("protocol-rustdesk", !rustDeskSupported)
 	m.fields = map[string]string{
-		"name": h.Name, "address": h.Address, "port": strconv.Itoa(h.Port),
+		"name": h.Name, "adb": "", "rustdesk-id": "", "rustdesk-password": "", "address": h.Address, "port": strconv.Itoa(h.Port),
 		"user": h.User, "domain": h.Domain, "group": h.Group, "password": h.Password,
 		"width": strconv.Itoa(h.Width), "height": strconv.Itoa(h.Height),
+		"rustdesk-id-server": h.RustDeskNetwork.IDServer, "rustdesk-relay-server": h.RustDeskNetwork.RelayServer,
+		"rustdesk-key": h.RustDeskNetwork.Key,
+	}
+	switch h.Protocol {
+	case store.RustDesk:
+		m.fields["rustdesk-id"] = h.Address
+		m.fields["rustdesk-password"] = h.Password
+		m.fields["password"] = ""
+	case store.Android:
+		m.fields["adb"] = h.Address
 	}
 	for name, value := range m.fields {
 		m.value(c, "field-"+name, value)
@@ -535,39 +723,102 @@ func (m *Mod) edit(c *module.Context, id string) {
 	m.hide("edit-delete", id == "")
 	m.toggle("field-clipboard", h.Clipboard)
 	m.toggle("field-console", h.ConsoleMode)
+	m.toggle("rustdesk-force-relay", h.RustDeskNetwork.ForceRelay)
 	m.renderQuality()
 	m.route("edit")
+	m.renderHostProtocol()
+	if h.Protocol == store.Android {
+		m.refreshAndroidDevices()
+	}
+}
+
+func (m *Mod) renderHostProtocol() {
+	android := m.draft.Protocol == store.Android
+	rustDesk := m.draft.Protocol == store.RustDesk
+	rdp := !android && !rustDesk
+	m.choice("protocol-rdp", rdp)
+	m.choice("protocol-android", android)
+	m.choice("protocol-rustdesk", rustDesk)
+	m.hide("android-fields", !android)
+	m.hide("rustdesk-fields", !rustDesk)
+	m.hide("rustdesk-credentials", !rustDesk)
+	m.hide("rustdesk-network", !rustDesk)
+	m.renderRustDeskCopyButton()
+	for _, id := range []string{"rdp-address-fields", "rdp-credentials", "rdp-options"} {
+		m.hide(id, !rdp)
+	}
+	m.choice("android-serial", !m.draft.Wireless)
+	m.choice("android-wireless", m.draft.Wireless)
+	label, hint := "设备序列号", ""
+	if m.draft.Wireless {
+		label, hint = "无线调试地址", "192.168.1.10:5555"
+	}
+	m.text("android-address-label", m.tr(label))
+	nameHint := "例如：办公室电脑"
+	if android {
+		nameHint = "例如：我的手机"
+	}
+	m.node("field-name").SetAttribute("placeholder", m.tr(nameHint))
+	m.node("field-adb").SetAttribute("placeholder", hint)
+	m.hide("android-wireless-help", !m.draft.Wireless)
+}
+
+func (m *Mod) choice(id string, selected bool) {
+	class := "quality-option"
+	if selected {
+		class += " selected"
+	}
+	m.class(id, class)
+	m.node(id).SetAttribute("aria-pressed", strconv.FormatBool(selected))
 }
 
 func (m *Mod) renderQuality() {
 	selected := rdpclient.Quality(m.draft.Quality).Normalized()
 	for _, quality := range []rdpclient.Quality{rdpclient.QualitySmooth, rdpclient.QualityBalanced, rdpclient.QualityHigh} {
-		id := "quality-" + string(quality)
-		class := "quality-option"
-		if quality == selected {
-			class += " selected"
-		}
-		m.class(id, class)
-		m.node(id).SetAttribute("aria-pressed", strconv.FormatBool(quality == selected))
+		m.choice("quality-"+string(quality), quality == selected)
 	}
 }
 
 func (m *Mod) save(c *module.Context) {
 	h := m.draft
 	h.Name = strings.TrimSpace(m.fields["name"])
-	h.Address = strings.TrimSpace(strings.Trim(m.fields["address"], "[]"))
-	h.User = strings.TrimSpace(m.fields["user"])
-	h.Domain = strings.TrimSpace(m.fields["domain"])
 	h.Group = strings.TrimSpace(m.fields["group"])
-	h.Password = m.fields["password"]
-	h.Port, _ = strconv.Atoi(m.fields["port"])
-	h.Width, _ = strconv.Atoi(m.fields["width"])
-	h.Height, _ = strconv.Atoi(m.fields["height"])
-	if h.Width < 640 || h.Width > 4096 {
-		h.Width = 1600
-	}
-	if h.Height < 480 || h.Height > 4096 {
-		h.Height = 900
+	switch h.Protocol {
+	case store.RustDesk:
+		id, err := rustdesk.NormalizeID(m.fields["rustdesk-id"])
+		if err != nil {
+			m.toast(err)
+			return
+		}
+		h = store.Host{
+			ID: h.ID, Name: h.Name, Group: h.Group, Protocol: store.RustDesk, Favorite: h.Favorite,
+			Address: id, Password: m.fields["rustdesk-password"], RustDeskNetwork: m.rustDeskNetwork(),
+		}
+	case store.Android:
+		h = store.Host{ID: h.ID, Name: h.Name, Group: h.Group, Protocol: store.Android, Favorite: h.Favorite, Wireless: h.Wireless, Address: strings.TrimSpace(m.fields["adb"])}
+		if h.Wireless {
+			endpoint, err := scrcpy.Endpoint(h.Address)
+			if err != nil {
+				m.toast(err)
+				return
+			}
+			h.Address = endpoint
+		}
+	default:
+		h.RustDeskNetwork = rustdesk.Network{}
+		h.Address = strings.TrimSpace(strings.Trim(m.fields["address"], "[]"))
+		h.User = strings.TrimSpace(m.fields["user"])
+		h.Domain = strings.TrimSpace(m.fields["domain"])
+		h.Password = m.fields["password"]
+		h.Port, _ = strconv.Atoi(m.fields["port"])
+		h.Width, _ = strconv.Atoi(m.fields["width"])
+		h.Height, _ = strconv.Atoi(m.fields["height"])
+		if h.Width < 640 || h.Width > 4096 {
+			h.Width = 1600
+		}
+		if h.Height < 480 || h.Height > 4096 {
+			h.Height = 900
+		}
 	}
 	if err := m.vault.SaveHost(h); err != nil {
 		m.toast(err)
@@ -581,15 +832,47 @@ func (m *Mod) save(c *module.Context) {
 func (m *Mod) clearSecrets(c *module.Context) {
 	m.fields["password"] = ""
 	m.value(c, "field-password", "")
+	m.fields["rustdesk-password"] = ""
+	m.value(c, "field-rustdesk-password", "")
 	m.draft = store.Host{}
 }
 
-func (m *Mod) toggle(id string, on bool) {
-	class := "toggle"
-	if on {
-		class += " on"
+func (m *Mod) rustDeskNetwork() rustdesk.Network {
+	return rustdesk.Network{
+		IDServer:    strings.TrimSpace(m.fields["rustdesk-id-server"]),
+		RelayServer: strings.TrimSpace(m.fields["rustdesk-relay-server"]),
+		Key:         strings.TrimSpace(m.fields["rustdesk-key"]),
+		ForceRelay:  m.draft.RustDeskNetwork.ForceRelay,
 	}
-	m.class(id, class)
+}
+
+func (m *Mod) renderRustDeskCopyButton() {
+	label := "复制被控端配置"
+	if strings.TrimSpace(m.fields["rustdesk-id-server"]) == "" {
+		label = "复制中继地址"
+	}
+	m.text("rustdesk-copy-config", m.tr(label))
+}
+
+func (m *Mod) copyRustDeskConfig() {
+	network := m.rustDeskNetwork()
+	config, err := network.ClipboardText()
+	if err != nil {
+		m.toast(err)
+		return
+	}
+	if m.host == nil || m.host.SetClipboardText == nil || !m.host.SetClipboardText(config) {
+		m.toast(i18n.NewError("无法复制服务器配置"))
+		return
+	}
+	message := "已复制被控端服务器配置"
+	if network.IDServer == "" {
+		message = "已复制中继地址"
+	}
+	m.showToast(m.tr(message))
+}
+
+func (m *Mod) toggle(id string, on bool) {
 	m.node(id).SetAttribute("aria-checked", strconv.FormatBool(on))
 }
 
@@ -601,6 +884,32 @@ func (m *Mod) settings() {
 	m.languageOptions()
 	m.toggle("setting-reconnect", settings.Reconnect)
 	m.toggle("setting-clipboard", settings.Clipboard)
+}
+
+func (m *Mod) applyTheme(dark bool) {
+	theme := "light"
+	if dark {
+		theme = "dark"
+	}
+	m.node("shell").SetAttribute("data-theme", theme)
+	m.choice("theme-light", !dark)
+	m.choice("theme-dark", dark)
+}
+
+func (m *Mod) setTheme(dark bool) {
+	settings := m.vault.Settings()
+	if settings.DarkTheme == dark {
+		return
+	}
+	settings.DarkTheme = dark
+	if err := m.vault.SaveSettings(settings); err != nil {
+		m.toast(err)
+		return
+	}
+	m.applyTheme(dark)
+	for _, window := range m.sessionWindows {
+		window.SetTheme(dark)
+	}
 }
 
 func (m *Mod) setting(id string) {
@@ -622,7 +931,11 @@ func (m *Mod) renderSession() {
 		return
 	}
 	m.text("rdp-title", h.Name)
-	m.text("rdp-address", h.User+"@"+h.Endpoint())
+	if h.Protocol == store.RustDesk || h.Protocol == store.Android {
+		m.text("rdp-address", h.Address)
+	} else {
+		m.text("rdp-address", h.User+"@"+h.Endpoint())
+	}
 	fullscreenLabel := "全屏"
 	if m.fullscreen {
 		fullscreenLabel = "窗口模式"
@@ -643,7 +956,11 @@ func (m *Mod) renderSession() {
 	closed := status.State == rdpclient.StateClosed
 	m.hide("rdp-overlay", !connecting && !closed)
 	if connecting {
-		m.text("rdp-overlay-text", m.tr("正在连接…"))
+		line := m.tr("正在连接…")
+		if m.mirror != nil && m.mirror.run != nil && m.mirror.run.cancelledForSwitch {
+			line = m.tr("正在切换屏幕…")
+		}
+		m.text("rdp-overlay-text", line)
 		m.hide("rdp-overlay-retry", true)
 	} else if closed {
 		m.text("rdp-overlay-text", m.tr("连接已断开"))
@@ -653,24 +970,71 @@ func (m *Mod) renderSession() {
 
 // remoteKeys translates keyboard input into remote scancodes. Returning true
 // keeps the local text field from also editing its own buffer.
+// Launcher shortcuts use the platform command modifier. Remote windows own
+// their entire keyboard stream, including shortcuts used by the remote OS.
+func (m *Mod) launcherKeys(c *module.Context) {
+	state, ok := c.Content().Resource[*input.State]()
+	if !ok || state.CompositionHandledKey() {
+		return
+	}
+	if state.KeyPressed(input.KeyEscape) && !state.KeyPressedDuringComposition(input.KeyEscape) {
+		switch {
+		case m.confirm != "":
+			m.click(c, "confirm-cancel")
+		case m.page == "edit":
+			m.click(c, "edit-cancel")
+		}
+		return
+	}
+	if m.confirm != "" {
+		return
+	}
+	modifier := input.ModifierControl
+	if runtime.GOOS == "darwin" {
+		modifier = input.ModifierSuper
+	}
+	chord := func(key input.KeyCode) bool {
+		return state.KeyPressed(key) && !state.KeyPressedDuringComposition(key) && state.KeyModifiers(key) == modifier
+	}
+	switch {
+	case m.page == "hosts" && chord(input.KeyF):
+		if field, ok := c.Content().HTMLControl(c.Content().Root(), "search"); ok {
+			c.Content().Focus(field)
+		}
+	case m.page != "edit" && chord(input.KeyN):
+		m.edit(c, "")
+	case m.page == "edit" && chord(input.KeyS):
+		m.save(c)
+	}
+}
+
 func (m *Mod) remoteKeys(state *input.State) bool {
-	if m.page != "rdp" || m.client == nil {
+	if m.page != "rdp" || (m.client == nil && m.mirror == nil) {
 		return false
 	}
 	if m.confirm != "" {
 		return true
 	}
-	status := m.client.Status()
-	if status.State != rdpclient.StateConnected {
+	stateNow := m.status.State
+	if m.client != nil {
+		stateNow = m.client.Status().State
+	}
+	if stateNow != rdpclient.StateConnected {
 		return true
 	}
-	if state.KeyPressed(input.KeyF11) && m.host != nil && m.host.ToggleFullscreen != nil {
+	windowKey := func(key input.KeyCode) bool {
+		return state.KeyPressed(key) && (m.mirror == nil || !state.KeyPressedDuringComposition(key))
+	}
+	if windowKey(input.KeyF11) && m.host != nil && m.host.ToggleFullscreen != nil {
 		m.toggleFullscreen()
 		return true
 	}
-	if m.fullscreen && state.KeyPressed(input.KeyEscape) {
+	if m.fullscreen && windowKey(input.KeyEscape) {
 		m.toggleFullscreen()
 		return true
+	}
+	if m.mirror != nil {
+		return m.androidKeys(state)
 	}
 	handled := false
 	for _, key := range rdpclient.Keycodes() {
@@ -735,27 +1099,74 @@ func (m *Mod) OnMessage(c *module.Context, message module.Message) error {
 		m.input(event.HTMLID, event.Value)
 		return nil
 	case htmlui.EventSubmit:
-		if event.HTMLID == "rdp-input" {
+		if event.HTMLID == "rdp-input" && m.mirror != nil {
+			if run := m.mirror.run; run != nil {
+				run.native.Key(66, 0, true)
+				run.native.Key(66, 0, false)
+			}
+			m.resetInput(c)
+		} else if event.HTMLID == "rdp-input" && m.client != nil {
 			m.client.SendSequence([]rdpclient.Key{{Scancode: 0x1C}})
 			m.resetInput(c)
-			return nil
-		}
-	case htmlui.EventClick:
-		m.click(c, event.HTMLID)
-		if host := c.Host(); host != nil && host.RequestRender != nil {
-			host.RequestRender()
 		}
 		return nil
+	case htmlui.EventClick:
+		// Row buttons use the underlying tap, which identifies the input device.
+		if m.isActivationRow(event.HTMLID) {
+			return nil
+		}
+	default:
+		if event.Event.Kind == scene.InputEventFilesDropped {
+			m.queueAndroidAPK(event.Event.File)
+			return nil
+		}
+		if m.page == "rdp" {
+			m.pointer(event)
+		}
+		if event.Event.Kind != scene.InputEventTap || !m.activateRow(event, time.Now()) {
+			return nil
+		}
 	}
-	if m.page == "rdp" {
-		m.pointer(event)
+	m.click(c, event.HTMLID)
+	if host := c.Host(); host != nil && host.RequestRender != nil {
+		host.RequestRender()
 	}
 	return nil
+}
+
+func (m *Mod) isActivationRow(id string) bool {
+	return (m.page == "hosts" && strings.HasPrefix(id, "connect:")) ||
+		(m.page == "sessions" && strings.HasPrefix(id, "session-window:"))
+}
+
+func (m *Mod) activateRow(event module.Input, now time.Time) bool {
+	const doubleClickInterval = 500 * time.Millisecond
+	const doubleClickDistance = 4
+
+	previous := m.lastRowClick
+	m.lastRowClick = rowClick{}
+	if !m.isActivationRow(event.HTMLID) {
+		return false
+	}
+	tap := event.Event
+	if tap.Device != input.PointerDeviceMouse {
+		return true
+	}
+	dx, dy := tap.X-previous.x, tap.Y-previous.y
+	if previous.id == event.HTMLID && now.Sub(previous.at) <= doubleClickInterval &&
+		dx*dx+dy*dy <= doubleClickDistance*doubleClickDistance {
+		return true
+	}
+	m.lastRowClick = rowClick{id: event.HTMLID, at: now, x: tap.X, y: tap.Y}
+	return false
 }
 
 func (m *Mod) input(id, value string) {
 	if strings.HasPrefix(id, "field-") {
 		m.fields[strings.TrimPrefix(id, "field-")] = value
+		if id == "field-rustdesk-id-server" {
+			m.renderRustDeskCopyButton()
+		}
 		return
 	}
 	if id == "search" {
@@ -770,7 +1181,11 @@ func (m *Mod) pointer(event module.Input) {
 	if m.toolbarPointer(event.Event) {
 		return
 	}
-	if m.client == nil || m.status.State != rdpclient.StateConnected {
+	var pointer pointerClient = m.client
+	if m.mirror != nil && m.mirror.run != nil {
+		pointer = m.mirror.run
+	}
+	if pointer == nil || m.status.State != rdpclient.StateConnected {
 		return
 	}
 	x, y, ok := m.remotePoint(event.Event.X, event.Event.Y)
@@ -784,7 +1199,7 @@ func (m *Mod) pointer(event module.Input) {
 	m.remoteX, m.remoteY = x, y
 	switch event.Event.Kind {
 	case scene.InputEventMove:
-		m.client.MouseMove(x, y)
+		pointer.MouseMove(x, y)
 	case scene.InputEventPress:
 		button := int(event.Event.Button)
 		if button < 0 || button >= len(m.pressed) {
@@ -794,7 +1209,7 @@ func (m *Mod) pointer(event module.Input) {
 		// A tap on the frame is also how a phone gets its keyboard back; the
 		// invisible text field only receives keys once it holds focus.
 		m.focusInput = true
-		m.client.MouseButton(button, true, x, y)
+		pointer.MouseButton(button, true, x, y)
 	case scene.InputEventRelease:
 		button := int(event.Event.Button)
 		// The engine's left-button events carry MouseLeft. Other desktop
@@ -807,14 +1222,14 @@ func (m *Mod) pointer(event module.Input) {
 				}
 			}
 		}
-		if m.pressed[button] {
-			m.client.MouseButton(button, false, x, y)
+		if button >= 0 && button < len(m.pressed) && m.pressed[button] {
+			pointer.MouseButton(button, false, x, y)
 			m.pressed[button] = false
 		}
 	case scene.InputEventCancel:
 		for button, pressed := range m.pressed {
 			if pressed {
-				m.client.MouseButton(button, false, x, y)
+				pointer.MouseButton(button, false, x, y)
 				m.pressed[button] = false
 			}
 		}
@@ -822,10 +1237,10 @@ func (m *Mod) pointer(event module.Input) {
 		notches := int(-event.Event.WheelY)
 		if notches == 0 {
 			notches = int(-event.Event.WheelX)
-			m.client.Wheel(x, y, notches, true)
+			pointer.Wheel(x, y, notches, true)
 			return
 		}
-		m.client.Wheel(x, y, notches, false)
+		pointer.Wheel(x, y, notches, false)
 	}
 }
 
@@ -874,13 +1289,32 @@ func (m *Mod) remotePoint(x, y float32) (int, int, bool) {
 func (m *Mod) resetInput(c *module.Context) { m.value(c, "rdp-input", "") }
 
 func (m *Mod) click(c *module.Context, id string) {
+	if m.page == "edit" && (strings.HasPrefix(id, "nav-") || strings.HasPrefix(id, "group:")) {
+		m.clearSecrets(c)
+	}
 	if prefix, value, ok := strings.Cut(id, ":"); ok {
 		switch prefix {
+		case "group":
+			m.groupFilter, m.favoriteOnly = value, false
+			m.route("hosts")
+		case "android-device":
+			m.selectAndroidDevice(c, value)
+		case "android-key":
+			m.pressAndroidButton(value)
+		case "display":
+			m.selectDisplay(value)
 		case "language":
 			m.setLanguage(value)
 		case "connect":
 			m.openHost(value, true)
 			m.resetInput(c)
+		case "session-window":
+			for _, session := range m.sessionWindows {
+				if session.ID == value && !session.Closing && session.Activate != nil {
+					session.Activate()
+					break
+				}
+			}
 		case "session":
 			m.openHost(value, false)
 			m.resetInput(c)
@@ -893,38 +1327,68 @@ func (m *Mod) click(c *module.Context, id string) {
 				m.dirty = true
 			}
 		case "close":
+			if m.sessionLauncher() {
+				m.requestConfirm("close:"+value, "断开连接？", "会话窗口将关闭。")
+				return
+			}
 			m.selected = value
 			m.requestConfirm("disconnect", "断开连接？", "远程桌面会话将关闭，未保存的工作可能丢失。")
 		}
 		return
 	}
 	switch id {
-	case "nav-hosts", "go-hosts":
+	case "nav-hosts", "nav-favorites", "go-hosts":
+		m.groupFilter, m.favoriteOnly = "", id == "nav-favorites"
 		m.route("hosts")
 	case "nav-sessions", "rdp-back":
 		m.route("sessions")
 	case "nav-settings":
 		m.settings()
 		m.route("settings")
+	case "protocol-android", "protocol-rdp", "protocol-rustdesk":
+		if !m.sessionLauncher() {
+			return
+		}
+		m.draft.Protocol = ""
+		switch id {
+		case "protocol-android":
+			m.draft.Protocol = store.Android
+			m.refreshAndroidDevices()
+		case "protocol-rustdesk":
+			if !rustDeskSupported {
+				return
+			}
+			m.draft.Protocol = store.RustDesk
+		}
+		m.renderHostProtocol()
+	case "android-refresh":
+		m.refreshAndroidDevices()
+	case "android-serial", "android-wireless":
+		m.draft.Wireless = id == "android-wireless"
+		m.renderHostProtocol()
+	case "android-back":
+		m.pressAndroidButton("back")
+	case "screens-toggle":
+		if m.mirror != nil {
+			m.mirror.picker = !m.mirror.picker
+			m.toolbar.keys = false
+			m.renderToolbar()
+			if m.mirror.picker {
+				m.refreshDisplays()
+			}
+		}
+	case "screens-refresh":
+		m.refreshDisplays()
 	case "add-host", "empty-add":
 		m.edit(c, "")
-	case "filter-all":
-		m.favoriteOnly = false
-		m.class("filter-all", "filter selected")
-		m.class("filter-favorite", "filter")
-		m.node("filter-all").SetAttribute("aria-pressed", "true")
-		m.node("filter-favorite").SetAttribute("aria-pressed", "false")
-		m.dirty = true
-	case "filter-favorite":
-		m.favoriteOnly = true
-		m.class("filter-all", "filter")
-		m.class("filter-favorite", "filter selected")
-		m.node("filter-all").SetAttribute("aria-pressed", "false")
-		m.node("filter-favorite").SetAttribute("aria-pressed", "true")
-		m.dirty = true
 	case "field-clipboard":
 		m.draft.Clipboard = !m.draft.Clipboard
 		m.toggle("field-clipboard", m.draft.Clipboard)
+	case "rustdesk-force-relay":
+		m.draft.RustDeskNetwork.ForceRelay = !m.draft.RustDeskNetwork.ForceRelay
+		m.toggle(id, m.draft.RustDeskNetwork.ForceRelay)
+	case "rustdesk-copy-config":
+		m.copyRustDeskConfig()
 	case "field-console":
 		m.draft.ConsoleMode = !m.draft.ConsoleMode
 		m.toggle("field-console", m.draft.ConsoleMode)
@@ -934,7 +1398,7 @@ func (m *Mod) click(c *module.Context, id string) {
 		m.dirty = true
 	case "edit-save":
 		m.save(c)
-	case "edit-cancel":
+	case "edit-back", "edit-cancel":
 		m.clearSecrets(c)
 		m.route("hosts")
 	case "edit-delete":
@@ -952,6 +1416,9 @@ func (m *Mod) click(c *module.Context, id string) {
 	case "rdp-keys-toggle":
 		m.hide("rdp-tooltip", true)
 		m.toolbar.keys = !m.toolbar.keys
+		if m.mirror != nil {
+			m.mirror.picker = false
+		}
 		m.renderToolbar()
 		m.focusInput = true
 	case "rdp-info-toggle":
@@ -962,7 +1429,9 @@ func (m *Mod) click(c *module.Context, id string) {
 	case "rdp-close":
 		m.requestConfirm("disconnect", "断开连接？", "远程桌面会话将关闭，未保存的工作可能丢失。")
 	case "rdp-reconnect", "rdp-overlay-retry":
-		if h, ok := m.findHost(m.selected); ok {
+		if m.mirror != nil {
+			m.restartMirror()
+		} else if h, ok := m.findHost(m.selected); ok {
 			m.connect(h)
 			m.dirty = true
 		}
@@ -971,6 +1440,8 @@ func (m *Mod) click(c *module.Context, id string) {
 		m.confirm = ""
 	case "confirm-ok":
 		m.confirmed(c)
+	case "theme-light", "theme-dark":
+		m.setTheme(id == "theme-dark")
 	case "setting-reconnect", "setting-clipboard":
 		m.setting(id)
 	case "key-cad":
@@ -1031,11 +1502,13 @@ func (m *Mod) syncResolution() {
 
 func (m *Mod) desktopResolution() (int, int) {
 	if m.fullscreen && m.host != nil {
-		if m.host.Context != nil {
-			return m.sessionQuality.Resolution(m.host.Context.Width, m.host.Context.Height)
+		if m.host.Context != nil && m.host.Context.Width > 0 && m.host.Context.Height > 0 {
+			return m.host.Context.Width, m.host.Context.Height
 		}
 		if m.host.GetViewport != nil {
-			return m.sessionQuality.Resolution(m.host.GetViewport())
+			if width, height := m.host.GetViewport(); width > 0 && height > 0 {
+				return width, height
+			}
 		}
 	}
 	if h, ok := m.findHost(m.selected); ok {
@@ -1044,9 +1517,10 @@ func (m *Mod) desktopResolution() (int, int) {
 	return 0, 0
 }
 
-// Closing a session window returns to the address book's session list. Only
-// a subsequent close with no session open should terminate the application.
 func (m *Mod) closeRequested() bool {
+	if m.sessionChild() {
+		return !m.closeAndroidAppScreen()
+	}
 	if !m.connected && m.page != "rdp" {
 		return true
 	}
@@ -1085,8 +1559,29 @@ func (m *Mod) confirmed(c *module.Context) {
 		m.clearSecrets(c)
 		m.listSignature = ""
 		m.route("hosts")
-	case "all", "disconnect":
-		m.disconnect()
+	case "all":
+		if m.sessionLauncher() {
+			for _, session := range m.sessionWindows {
+				session.Close()
+			}
+		} else {
+			m.disconnect()
+		}
+	case "disconnect":
+		if m.sessionChild() {
+			m.host.RequestClose()
+		} else {
+			m.disconnect()
+		}
+	default:
+		if id, ok := strings.CutPrefix(m.confirm, "close:"); ok {
+			for _, session := range m.sessionWindows {
+				if session.ID == id {
+					session.Close()
+					break
+				}
+			}
+		}
 	}
 	m.confirm = ""
 	m.hide("confirm-modal", true)
@@ -1096,6 +1591,17 @@ func (m *Mod) confirmed(c *module.Context) {
 // Destroy releases the session and the GPU texture. The frame provider is put
 // back so a remount starts from the project provider instead of a disposed one.
 func (m *Mod) Destroy(c *module.Context) error {
+	if m.android.cancel != nil {
+		m.android.cancel()
+	}
+	if m.mirror != nil {
+		m.mirror.close()
+	}
+	for _, session := range m.sessionWindows {
+		session.OnClosed, session.OnChange = nil, nil
+		session.Close()
+	}
+	m.sessionWindows = nil
 	if m.fullscreen && m.host != nil && m.host.ToggleFullscreen != nil {
 		m.host.ToggleFullscreen()
 		m.fullscreen = false

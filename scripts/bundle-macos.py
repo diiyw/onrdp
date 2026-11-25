@@ -29,6 +29,8 @@ def bundle(app):
         executable = plistlib.load(file)["CFBundleExecutable"]
     binary = app / "Contents/MacOS" / executable
     frameworks = app / "Contents/Frameworks"
+    rustdesk = frameworks / "liblibrustdesk.dylib"
+    scrcpy = app / "Contents/Resources/tools/scrcpy/libonrdp-scrcpy.dylib"
     licenses = app / "Contents/Resources/NativeLicenses"
     frameworks.mkdir(exist_ok=True)
     licenses.mkdir(exist_ok=True)
@@ -42,7 +44,7 @@ def bundle(app):
             return (binary.parent / dep.removeprefix("@executable_path/")).resolve(strict=True)
         return Path(dep).resolve(strict=True)
     originals = {}
-    pending = [binary]
+    pending = [binary, rustdesk, scrcpy]
     scanned = set()
     while pending:
         origin = pending.pop().resolve()
@@ -90,20 +92,24 @@ def bundle(app):
             shutil.copy2(text, dest / text.name)
         packages[name] = metadata
     (licenses / "manifest.json").write_text(json.dumps(packages, indent=2) + "\n")
-    outputs = [(binary, binary)] + [(source, frameworks / name) for name, source in originals.items()]
+    outputs = [(binary, binary), (rustdesk, rustdesk), (scrcpy, scrcpy)] + [
+        (source, frameworks / name) for name, source in originals.items()
+    ]
     for origin, output in outputs:
         changes = []
         for dep in deps(origin):
             if not system(dep):
                 name = resolve(origin, dep).name
-                relative = ("@executable_path/../Frameworks/" if output == binary else "@loader_path/") + name
-                changes.extend(["-change", dep, relative])
+                relative = os.path.relpath(frameworks / name, output.parent)
+                changes.extend(["-change", dep, "@loader_path/" + relative])
         if output != binary:
             changes.extend(["-id", "@rpath/" + output.name])
         if changes:
             subprocess.check_call(["install_name_tool", *changes, str(output)])
     for lib in sorted(frameworks.iterdir()):
         subprocess.check_call(["codesign", "--force", "--sign", "-", str(lib)])
+    for path in (scrcpy, scrcpy.with_name("adb")):
+        subprocess.check_call(["codesign", "--force", "--sign", "-", str(path)])
     subprocess.check_call(["codesign", "--force", "--sign", "-", str(app)])
     subprocess.check_call(["codesign", "--verify", "--deep", "--strict", str(app)])
     # A package may not reference the build machine's Homebrew or source paths.

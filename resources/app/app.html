@@ -3,275 +3,412 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>OnRDP</title>
 <style>
 *{box-sizing:border-box}
-
-html,body{margin:0;width:100%;height:100%;background:#0f1216;color:#e8edf2;font-family:sans-serif;font-size:16px}
-
-button,input,textarea{font-family:sans-serif;font-size:16px}
-
-button{display:inline-flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;min-height:48px;border:0;color:#e8edf2;background:#222a33;border-radius:14px;padding:0 18px}
-
-button:active{background:#2e3945}
-button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #7fb2e8;outline-offset:2px}
-
-button:disabled{opacity:.4}
+html,body{margin:0;width:100%;height:100%;background:#f7f7f8;color:#202126;font-family:system-ui,sans-serif;font-size:14px}
+button,input,textarea{font-family:system-ui,sans-serif;font-size:13px}
+button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:28px;padding:0 12px;border:1px solid #a9abb2;border-radius:4px;background:#fafafb;color:#202126;cursor:default;text-align:center}
+button:hover{background:#ecedf0}
+button:active{background:#dfdfe5}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #325fcf;outline-offset:-2px}
+input,textarea{placeholder-color:#656976}
+button:disabled{opacity:.5;cursor:default}
 button img,button span,button i{pointer-events:none}
-button img{width:22px;height:22px}
-
+button img{width:16px;height:16px}
 [hidden]{display:none!important}
 h1,h2,h3,p{margin:0}
-h1{font-size:30px;font-weight:700;line-height:1.3;letter-spacing:-.7px}
-h2{font-size:22px;line-height:1.4}
-h3{font-size:16px}
-
-.muted{color:#93a2b2}
+h1{font-size:16px;font-weight:600;line-height:1.25}
+h2{font-size:18px}
+h3{font-size:14px}
 .mono{font-family:monospace}
-.primary{background:#7fb2e8;color:#0d1b2a;font-weight:700}
-.primary:active{background:#5d94cf}
-.danger{color:#f0a8a1}
-.quiet{background:transparent;color:#a9c6e2}
-.icon-button{display:flex;align-items:center;justify-content:center;width:48px;padding:0;flex-shrink:0}
+.primary{background:#315bd1;color:#ffffff;border-color:#315bd1;font-weight:600}
+.primary:hover{background:#254bb9}
+.primary:active{background:#1e3fa0}
+.quiet,.danger{background:transparent}
+.danger{color:#9c403b}
+.danger:hover{background:#f6e6df}
 
-.shell{position:relative;width:100vw;height:100vh;overflow:hidden}
-.page{position:absolute;inset:0 0 76px;overflow-y:auto;padding:22px 20px 28px;scrollbar-width:none}
-
-.heading{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;margin-bottom:20px}
-.heading-action{font-size:14px;padding:0 12px}
-.add-host{width:52px;height:52px;border-radius:16px}
-
-.search{display:flex;align-items:center;gap:10px;height:52px;padding:0 16px;background:#1a222b;border:0;border-radius:26px;margin-bottom:16px}
-.search img{width:21px;height:21px;flex-shrink:0}
-.search input{min-height:0;border:0;background:transparent;color:#e8edf2;min-width:0;width:100%;height:48px;padding:0;outline:0;font-size:15px}
-
-.filters{display:flex;gap:8px;margin-bottom:22px}
-.filter{height:48px;min-height:48px;font-size:14px;color:#9db0c4;background:transparent;border:1px solid #33414f;border-radius:14px;padding:0 20px}
-.filter.selected{background:#26405c;border-color:#26405c;color:#cfe4f8}
-
-.section-label{display:flex;justify-content:space-between;align-items:center;margin:24px 4px 10px;color:#93a5b8;font-size:12px;line-height:18px;font-weight:700;letter-spacing:.3px}
-.connection-count{display:flex;align-items:center;gap:6px;font-weight:400}
-.status-dot{width:6px;height:6px;border-radius:50%;background:#6d7f90;flex-shrink:0}
-.status-dot.live{background:#7fb2e8}
-
-.host-list{border-radius:18px;overflow:hidden;background:#171e26}
-.host-card{position:relative;background:#171e26;border-bottom:1px solid #263140;overflow:hidden}
-.host-card:last-child{border-bottom:0}
-
-.host-connect{display:flex;align-items:center;justify-content:flex-start;width:100%;min-height:94px;text-align:left;background:transparent;padding:16px;gap:14px;border-radius:0}
-.host-symbol{display:flex;align-items:center;justify-content:center;width:46px;height:46px;flex-shrink:0;background:#22344a;border-radius:14px;font-family:monospace;font-size:20px;color:#8fc0ef}
-.host-copy{display:flex;flex:1;flex-direction:column;gap:5px;min-width:0}
-.host-name{font-size:17px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.host-address{font-family:monospace;color:#95a6b8;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.host-chevron{width:17px;height:17px;flex-shrink:0}
-.host-footer{display:flex;justify-content:space-between;align-items:center;padding:0 8px 4px 76px;gap:6px;min-height:48px}
-.host-meta{flex:1;min-width:0;font-size:12px;color:#8698aa;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.host-actions{display:flex;gap:0;flex-shrink:0}
-.host-actions button{background:transparent;color:#aec6dc;min-height:48px;padding:0 10px;font-size:13px;border-radius:12px}
-.host-state{font-size:11px;color:#8fc0ef;white-space:nowrap;max-width:88px;overflow:hidden;text-overflow:ellipsis}
-.host-actions .danger{color:#f0a8a1}
-
-.empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:44px 16px 36px}
-.empty-art{display:flex;align-items:center;justify-content:center;width:88px;height:88px;border-radius:26px;background:#1d2a38;margin-bottom:24px}
-.empty-icon{width:42px;height:42px}
-.empty h2{max-width:100%;font-size:21px;margin-bottom:10px}
-.empty p{width:100%;white-space:pre-line;font-size:14px;line-height:1.8;color:#9aabbd;margin-bottom:24px}
-.empty .primary{padding:0 28px;min-height:50px;border-radius:25px}
-.notice{padding:16px 4px;display:flex;align-items:flex-start;gap:10px;margin-top:18px}
-.notice img{width:19px;height:19px;flex-shrink:0;margin-top:2px}
-.notice p{font-size:12px;line-height:1.8;color:#8698aa}
-.notice strong{font-size:12px;font-weight:400;color:#a7bbd0}
-.session-intro{font-size:14px;line-height:1.7;color:#93a2b2;margin:-8px 4px 20px}
-
-.bottom-nav{position:absolute;left:0;right:0;bottom:0;height:76px;display:flex;align-items:flex-start;padding:8px 12px 10px;background:#141b23;gap:8px}
-.nav-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;flex:1;height:58px;font-size:12px;background:transparent;color:#8b9dae;border-radius:0;padding:0}
-.nav-item:active{background:transparent}
-.nav-icon{position:relative;display:flex;align-items:center;justify-content:center;width:64px;height:32px;border-radius:16px}
-.nav-item.selected{color:#cfe4f8}
-.nav-item.selected .nav-icon{background:#26405c}
-.nav-item img{width:23px;height:23px}
-.nav-selected{display:none}
-.nav-item.selected .nav-default{display:none}
+.shell{background:#f7f7f8;color:#202126;position:relative;width:100vw;height:100vh;overflow:hidden}
+.sidebar{position:absolute;height:100vh;top:0;bottom:0;left:0;width:180px;padding:0 8px;display:flex;flex-direction:column;background:#f0f0f2;border-right:1px solid #d9dade}
+.brand{display:flex;align-items:center;flex-shrink:0;gap:8px;height:45px;margin:0 -8px 8px;padding:0 16px;border-bottom:1px solid #cbccd2;background:#ededf0;font-size:14px;font-weight:600}
+.brand img{width:20px;height:20px}
+.nav-item{position:relative;display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;min-height:30px;height:30px;margin:2px 0;padding:0 9px;color:#565b68;background:transparent;border:0;border-radius:5px;font-size:14px}
+.nav-item:hover{background:#ecedf0}
+.nav-item.selected{color:#2d4eb7;background:#dfe6fb}
+.nav-icon{display:flex;align-items:center;justify-content:center}
+.nav-item img{width:16px;height:16px;flex-shrink:0}
+.nav-label,.group-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.library-scroll{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin}
+.source-heading{margin:14px 8px 4px;padding-top:10px;border-top:1px solid #d5d6dc;font-size:12px;color:#565b68}
+#group-list .nav-item{padding-left:15px;font-size:13px}
+.group-name{flex:1;text-align:left}
+.group-count{font-size:11px;color:#606470}
+:where([data-theme="dark"]) .source-heading,:where([data-theme="dark"]) .group-count{color:#acacb6}
+.nav-selected,.nav-item.selected .nav-default{display:none}
 .nav-item.selected .nav-selected{display:block}
-.nav-badge{position:absolute;right:4px;top:0;min-width:16px;height:16px;border-radius:8px;background:#7fb2e8;color:#0d1b2a;font-size:10px;padding:0 4px;line-height:16px;text-align:center}
+.nav-badge{margin-left:auto;color:#2d4eb7;font-family:monospace;font-size:12px}
+.nav-footer{padding:5px 0;flex-shrink:0;border-top:1px solid #d9dade}
 
-.language-option{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:52px;border-radius:0;background:transparent;border-bottom:1px solid #263140;text-align:left;gap:8px;padding:12px 16px}
-.language-option.selected{background:#26405c;color:#cfe4f8}
-.language-option:last-child{border-bottom:0}
-.language-option span{pointer-events:none}
-.settings-group{border:0;border-radius:18px;overflow:hidden;margin-bottom:8px;background:#171e26}
-.setting{padding:17px 16px;display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid #263140;min-height:82px}
-.setting:last-child{border-bottom:0}
-.setting p{font-size:12px;line-height:1.7;color:#8ea0b2;margin-top:5px}
-.setting-copy{flex:1;min-width:0;font-size:16px;line-height:1.5}
-.toggle{position:relative;width:56px;min-width:56px;height:48px;min-height:48px;padding:0;background:transparent;border-radius:24px}
-.toggle:active{background:transparent}
-.toggle-track{display:block;position:absolute;left:2px;top:8px;width:52px;height:32px;border:2px solid #66788a;border-radius:18px;background:#2b3540}
-.toggle-thumb{position:absolute;left:6px;top:6px;width:16px;height:16px;border-radius:50%;background:#9aacbc}
-.toggle.on .toggle-track{border-color:#7fb2e8;background:#7fb2e8}
-.toggle.on .toggle-thumb{left:24px;top:2px;width:24px;height:24px;background:#0f2032}
-.stepper{display:flex;align-items:center;gap:2px;background:#22303d;border-radius:13px;flex-shrink:0}
-.stepper button{padding:0;width:48px;height:48px;min-height:48px;font-size:22px;background:transparent;color:#b6d3ee}
-.stepper span{min-width:24px;text-align:center;font-family:monospace;font-size:15px}
-.setting-note{font-size:12px;line-height:1.9;color:#8ea0b2;margin:10px 4px 20px}
-.settings-footer{display:flex;align-items:center;gap:9px;justify-content:center;color:#6c7f91;font-size:12px;margin:30px 0 8px}
-.settings-footer img{width:17px;height:17px}
+.page{position:absolute;height:100vh;top:0;bottom:0;left:180px;right:0;display:flex;flex-direction:column;overflow:hidden}
+.heading h1{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.heading{display:flex;align-items:center;justify-content:space-between;flex-shrink:0;gap:12px;height:45px;padding:0 14px;border-bottom:1px solid #c6c8ce;background:linear-gradient(to bottom,#f9f9fa,#eaeaec)}
+.host-tools{flex:1;display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.host-heading h1{max-width:45%;padding-right:12px;border-right:1px solid #c6c8ce}
+.host-tools button{flex-shrink:0;min-height:28px;font-size:13px;padding:0 9px}
+.host-tools button,.editor-actions button:not(.primary),.modal-actions button:not(.primary){border:1px solid #a9abb2;background:linear-gradient(to bottom,#ffffff,#eeeef1)}
+.host-tools button:hover,.editor-actions button:not(.primary):hover,.modal-actions button:not(.primary):hover{background:#e7e9ee}
+.search{display:flex;align-items:center;gap:6px;width:224px;max-width:100%;min-width:0;height:27px;padding:0 8px;border:1px solid #a8abb3;border-radius:4px;background:#ffffff}
+.search,.form-section input{box-shadow:inset 0 1px 2px rgba(30,32,40,.10)}
+.search:focus-within,.form-section input:focus{border-color:#3c64ce;outline:1px solid #3c64ce;outline-offset:-2px}
+.search input:focus-visible{outline:0}
+.search img{width:16px;height:16px;flex-shrink:0}
+.search input{flex:1;min-width:0;width:100%;height:24px;min-height:0;padding:0;border:0;color:#202126;background:transparent;font-size:13px}
+.list-pane{display:flex;flex-direction:column;flex:1;min-height:0;background:#ffffff;overflow:hidden}
+.list-scroll,.page-scroll,.form-content{flex:1;min-height:0;overflow-y:auto}
+.list-scroll{display:flex;flex-direction:column}
+.list-scroll,.page-scroll,.form-content,.screens-panel{scrollbar-color:#a2a5ae #f1f1f3;scrollbar-width:thin}
+.column-head,.record-row{display:flex;align-items:center;padding:0 12px;gap:10px}
+.column-head{min-height:25px;flex-shrink:0;border-bottom:1px solid #cbccd2;background:#f3f3f5;color:#52565f;font-size:12px}
+.column-head .record-main>span:not(:last-child){border-right:1px solid #ced0d6}
+.record-row{min-height:32px}
+.record-row:nth-child(even){background:#f4f5f7}
+.record-row:hover,.record-row:focus-within{background:#e8edfa}
+.record-main{display:flex;flex:1;align-items:center;justify-content:flex-start;gap:14px;min-width:0;text-align:left}
+button.record-main{padding:0;min-height:32px;background:transparent;border:0}
+.record-name,.record-address,.record-extra{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.record-name{flex:1.05}
+.device-name{display:flex;align-items:center;gap:7px}
+.device-name img{width:16px;height:16px;flex-shrink:0}
+.device-name span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.record-display{flex:.9;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.record-row .record-display{font-size:12px;color:#565b68}
+:where([data-theme="dark"]) .record-row .record-display{color:#acacb6}
+.record-address{flex:1.2}
+.record-extra{flex:.68}
+.record-main:hover .record-name{color:#2d4eb7}
+.record-row .record-name{font-weight:500;color:#202126}
+.record-row .record-address{font-family:monospace;font-size:12px;color:#464a56}
+.record-row .record-extra{font-size:13px;color:#464a56}
+.record-detail{display:block;font-size:11px;font-weight:400;color:#565b68;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-actions{display:flex;align-items:center;justify-content:flex-end;gap:2px;width:64px;flex-shrink:0}
+.row-actions button{background:transparent;color:#2d4eb7;padding:0 7px;border:0;font-size:12px;min-height:28px}
+.row-actions button:hover{background:#e8edff;color:#2d4eb7}
+.star-fill,.icon-action[aria-pressed="true"] .star-outline{display:none}
+.icon-action[aria-pressed="true"] .star-fill{display:block}
+.row-actions .icon-action{width:28px;height:26px;min-height:26px;padding:0}
+.row-actions .danger{color:#9c403b}
+.row-actions button[aria-pressed="true"]{color:#2d4eb7}
+.statusbar{flex-shrink:0;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:24px;padding:0 12px;border-top:1px solid #cbccd2;background:#efeff1;color:#565b68;font-size:12px}
+.connection-count{display:flex;align-items:center;gap:7px;border-left:1px solid #cbccd2;padding-left:10px}
+.status-dot{width:6px;height:6px;border-radius:50%;background:#797d88}
+.status-dot.live{background:#315bd1}
+.empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:52px 18px 54px}
+.empty-art{display:flex;align-items:center;justify-content:center;width:54px;height:48px;margin-bottom:14px;background:#e8edff;border:1px solid #647dcc;border-radius:8px}
+.empty-icon{width:26px;height:26px}
+.empty h2{font-size:17px;margin-bottom:6px}
+.empty p,.form-help,.quality-help,.setting p,.session-intro{color:#565b68;font-size:13px;line-height:1.55}
+.empty p{white-space:pre-line;margin-bottom:16px}
+.session-intro{display:flex;align-items:center;min-height:25px;padding:2px 14px;border-top:1px solid #d9dade;font-size:12px}
+:where([data-theme="dark"]) .session-intro{border-top-color:#3c3c42}
 
-/* Full-height editor with a persistent header and its own scroll area. */
-.sheet-page{position:absolute;inset:0;width:100vw;height:100vh;background:#0f1216;display:flex;flex-direction:column;overflow:hidden}
-.sheet-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;gap:4px;background:#141b23;flex-shrink:0;border-bottom:1px solid #232e3a;min-height:64px}
-.sheet-header h2{font-size:18px}
-.save-action{background:transparent;color:#7fb2e8;font-weight:700}
-.form-content{flex:1;overflow-y:auto;padding:18px 20px 28px;scrollbar-width:none}
-.form-section{background:#171e26;border-radius:16px;overflow:hidden}
-.form-section > div{padding:12px 16px;border-bottom:1px solid #263140}
-.form-section > div:last-child{border-bottom:0}
-.form-section label{display:block;font-size:12px;color:#8ea0b2;margin-bottom:6px;font-weight:700;letter-spacing:.2px}
-.form-section input,.form-section textarea{display:block;width:100%;min-height:44px;border:1px solid #2c3845;background:#111820;color:#e8edf2;border-radius:10px;padding:10px 12px;outline:0}
-.form-section textarea{min-height:120px;font-family:monospace;font-size:13px;line-height:1.6;resize:none}
+.page-scroll,.form-content{padding:22px 24px}
+.settings-layout,.form-columns{display:flex;align-items:flex-start;gap:28px;max-width:1100px}
+.settings-main,.form-column{flex:1;min-width:0}
+.settings-preferences{width:230px;min-width:0;padding-left:22px;border-left:1px solid #d5d6dc}
+.group-title{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:600;color:#202126;margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid #d5d6dc}
+.settings-group{border:1px solid #bfc1c9;border-radius:3px;overflow:hidden;background:#ffffff;margin-bottom:22px}
+.settings-main .settings-group{border:0;border-radius:0;background:transparent}
+.setting,.language-option{display:flex;align-items:center;justify-content:space-between;gap:12px;border:0;border-bottom:1px solid #d9dade}
+.setting:last-child,.language-option:last-child{border-bottom:0}
+.setting{padding:6px 0 10px;border:0}
+.setting-copy{flex:1;min-width:0;font-size:14px}
+.setting-copy .toggle,.form-section > .toggle{width:100%}
+.setting p{margin-top:2px;font-size:12px}
+.setting .toggle+p{padding-left:23px}
+.language-option{width:100%;min-height:34px;border-radius:0;background:transparent;text-align:left;font-size:13px}
+.language-option.selected,.quality-option.selected{background:#e8edff;color:#2d4eb7}
+.toggle{justify-content:flex-start;gap:8px;min-height:24px;padding:0 3px 0 0;border:0;background:transparent;text-align:left;white-space:nowrap}
+.toggle:hover,.toggle:active{background:transparent}
+.check-box{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:15px;height:15px;border:1px solid #888c97;border-radius:3px;background:#fff}
+.check-box span{display:none;font-size:12px;font-weight:700;color:#fff}
+.toggle[aria-checked="true"] .check-box{background:#3b60c5;border-color:#3457b9}
+.toggle[aria-checked="true"] .check-box span{display:block}
+.toggle:hover .check-box{border-color:#365bc1}
+
+.screens-panel{width:100%;margin-top:5px;padding:6px;max-height:45vh;overflow-y:auto}
+.screens-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.screens-panel .form-help{margin:4px 0 8px}
+.rdp-toolbar .screens-panel .language-option{width:100%;height:auto;min-height:32px;padding:4px 10px;justify-content:space-between;text-align:left}
+.theme-options{margin-bottom:22px}
+.theme-options button{flex:1}
+.protocol-picker{margin-bottom:20px}
+.quality-options{display:flex;align-items:stretch}
+.quality-option{font-size:13px;min-height:28px;padding:0 10px;background:#fbfbfc;border-radius:0}
+.quality-option+.quality-option{margin-left:-1px}
+.quality-option:first-child{border-radius:4px 0 0 4px}
+.quality-option:last-child{border-radius:0 4px 4px 0}
+.quality-option.selected{background:#dfe7fb;color:#243f91;border-color:#849aca}
+.quality-option:not(.selected):hover{background:#ecedf0}
+.form-section{margin-bottom:22px}
+.form-section > div{margin-bottom:12px}
+.form-section > div:last-child{margin-bottom:0}
+.form-section label{display:block;font-size:12px;color:#464a56;margin-bottom:5px}
+.form-section input{display:block;width:100%;min-width:0;height:29px;border:1px solid #a8abb3;border-radius:3px;background:#ffffff;color:#202126;padding:0 8px}
 .form-row{display:flex;gap:10px}
 .form-row .wide{flex:1;min-width:0}
-.form-row .narrow{width:110px;flex-shrink:0}
-.quality-options{display:flex;gap:8px}
-.quality-option{flex:1;min-height:44px;border:1px solid #2c3845;border-radius:10px;background:#111820;color:#8ea0b2}
-.quality-option.selected{background:#26405c;border-color:#7bb5e8;color:#cfe4f8}
-.quality-help{font-size:12px;line-height:1.6;color:#8ea0b2;margin:8px 0 0}
-.form-help{font-size:12px;line-height:1.8;color:#8ea0b2;margin:14px 4px}
-.form-actions{display:flex;gap:10px;margin-top:6px}
-.full{width:100%}
-.form-actions button{flex:1}
-.tmux-option{min-height:0}
+.form-row .narrow{width:74px}
+.form-checks{display:flex;align-items:center;flex-wrap:wrap;gap:6px 20px}
+.quality-help,.form-help{font-size:12px;margin:8px 0}
+.editor-path{display:flex;align-items:center;gap:8px}
+.editor-path img{width:14px;height:14px}
+.path-parent{background:transparent;border:0;color:#565b68;padding:0 4px}
+.editor-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:10px 24px;border-top:1px solid #d9dade;background:#fcfcfd;flex-shrink:0}
+.editor-actions button,.modal-actions button{min-width:76px}
+.editor-actions .danger{margin-right:auto}
 
 /* Remote desktop surface. The framebuffer is drawn as a CSS-sized image. */
-.rdp-page{position:absolute;inset:0;width:100vw;height:100vh;background:#05080b;overflow:hidden}
-.rdp-stage{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#05080b}
+.rdp-page{position:absolute;inset:0;width:100vw;height:100vh;background:#101012;overflow:hidden}
+.rdp-stage{position:absolute;inset:0;width:100%;height:100%;overflow:hidden;background:#101012}
 .rdp-frame{position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain;pointer-events:none}
-.rdp-overlay{position:absolute;inset:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(5,8,11,.82);color:#9db0c4;font-size:14px;text-align:center;padding:24px}
+.rdp-overlay{position:absolute;inset:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:rgba(16,16,20,.82);color:#d8d9df;font-size:14px;text-align:center;padding:24px}
 .rdp-overlay .primary{padding:0 26px}
-.rdp-error{max-width:540px;color:#f0b3ab;font-size:12px;line-height:1.6;white-space:pre-line}
+.rdp-error{max-width:540px;color:#f6b6ac;font-size:12px;line-height:1.6;white-space:pre-line}
 .rdp-input{position:absolute;left:0;top:0;width:1px;height:1px;min-height:0;padding:0;border:0;opacity:0;pointer-events:none;resize:none;outline:0;font-size:1px;line-height:1px}
-.rdp-toolbar{position:absolute;left:12px;top:12px;width:320px;max-width:calc(100% - 24px);padding:5px;background:#141d27;border:1px solid #354352;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.35);z-index:10}
-.rdp-toolbar.collapsed{width:76px}
-.rdp-toolbar-row,.rdp-tools,.rdp-keys{display:flex;align-items:center;gap:2px;flex-wrap:wrap}
-.rdp-tools{flex:1}
-.rdp-toolbar button{display:flex;align-items:center;justify-content:center;width:36px;height:36px;min-height:36px;flex-shrink:0;padding:0;background:transparent;border-radius:7px}
+.rdp-toolbar{position:relative;display:inline-block;left:12px;top:12px;max-width:calc(100% - 24px);padding:5px;background:#f3f3f5;border:1px solid #a8abb3;border-radius:5px;box-shadow:0 2px 8px rgba(0,0,0,.22);z-index:10}
+.rdp-toolbar-row,.rdp-tools,.rdp-keys{display:flex;align-items:center;gap:2px;flex-wrap:nowrap}
+.rdp-tools{flex:1;min-width:0}
+.rdp-toolbar button{border:0;display:flex;align-items:center;justify-content:center;width:36px;height:36px;min-height:36px;min-width:0;padding:0;background:transparent;border-radius:3px}
 .rdp-toolbar button img{width:20px;height:20px}
-.rdp-toolbar button:hover{background:#293747}
-.rdp-toolbar button:active,.rdp-toolbar button[aria-pressed="true"]{background:#35495d}
+.rdp-toolbar button:hover{background:#ecedf0}
+.rdp-toolbar button:active,.rdp-toolbar button[aria-pressed="true"]{background:#dfdfe5}
 .rdp-toolbar .rdp-drag{width:24px;cursor:grab}
-.rdp-toolbar.dragging .rdp-drag{cursor:grabbing;background:#293747}
-.rdp-toolbar .danger:hover{background:#4a282e}
+.rdp-toolbar.dragging .rdp-drag{cursor:grabbing;background:#ecedf0}
+.rdp-toolbar .danger:hover{background:#f6e6df}
 .rdp-toggle{position:relative}
-.rdp-dot{position:absolute;right:4px;bottom:4px;width:6px;height:6px;border-radius:3px;background:#d3ab62;pointer-events:none}
-.rdp-dot.live{background:#73c69b}
-.rdp-dot.closed{background:#ef9e97}
-.rdp-keys{justify-content:center;padding-top:5px;margin-top:5px;border-top:1px solid #354352}
-.rdp-info{padding:10px 8px 6px;margin-top:5px;border-top:1px solid #354352;pointer-events:none}
+.rdp-dot{position:absolute;right:4px;bottom:4px;width:6px;height:6px;border-radius:3px;background:#906923;pointer-events:none}
+.rdp-dot.live{background:#315bd1}
+.rdp-dot.closed{background:#a94a42}
+.rdp-keys{justify-content:center;padding-top:5px;margin-top:5px;border-top:1px solid #d9dade}
+.rdp-info{width:100%;padding:10px 8px 6px;margin-top:5px;border-top:1px solid #d9dade;pointer-events:none}
 .rdp-info h2{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.rdp-info p{font-size:11px;color:#8ea0b2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:3px}
-.rdp-status{display:flex;justify-content:space-between;gap:8px;margin-top:7px;font-size:11px;color:#8ea0b2}
-.rdp-tooltip{position:absolute;width:190px;padding:7px 10px;border-radius:7px;background:#202d3b;color:#dce7f2;font-size:12px;text-align:center;pointer-events:none;z-index:11}
+.rdp-info p{font-size:11px;color:#565b68;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:3px}
+.rdp-status{display:flex;justify-content:space-between;gap:8px;margin-top:7px;font-size:11px;color:#565b68}
+.rdp-tooltip{position:absolute;width:190px;padding:7px 10px;border-radius:7px;background:#2c2d33;color:#f7f7fa;font-size:12px;text-align:center;pointer-events:none;z-index:11}
 
-.modal{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,8,11,.7);padding:24px;z-index:20}
-.shell.remote .modal{left:0;width:100%;height:100%}
-.modal-card{width:100%;max-width:420px;background:#1a222b;border-radius:18px;padding:24px}
-.modal-card h2{font-size:19px;margin-bottom:12px}
-.modal-card p{font-size:14px;line-height:1.7;color:#9db0c4;white-space:pre-line}
-.modal-actions{display:flex;gap:10px;margin-top:20px}
-.modal-actions button{flex:1}
 
-.toast{position:absolute;left:20px;right:20px;bottom:92px;padding:14px 18px;background:#22303d;border-radius:14px;font-size:14px;line-height:1.6;color:#dbe8f4;z-index:30}
-.fatal{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:32px;background:#0f1216;text-align:center;z-index:40}
-.fatal p{font-size:13px;line-height:1.8;color:#8ea0b2;word-break:break-word}
+.modal{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(22,22,28,.58);padding:18px;z-index:20}
+.modal-card{width:100%;max-width:420px;background:#ffffff;border:1px solid #a8abb3;border-radius:7px;padding:20px}
+.modal-card h2{margin-bottom:10px}
+.modal-card p{line-height:1.6;color:#464a56;white-space:pre-line}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.toast{position:absolute;right:20px;bottom:56px;max-width:86%;padding:10px 14px;background:#2c2d33;border:1px solid #a8abb3;border-radius:5px;color:#f7f7fa;z-index:30}
+.fatal{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:32px;background:#f7f7f8;text-align:center;z-index:40}
+.fatal p{font-size:13px;line-height:1.6;color:#565b68}
 
-@media(min-width:760px){
-.shell{display:grid;grid-template-columns:180px minmax(0,1fr)}
-.page{left:180px;right:0;bottom:0;padding:32px 36px}
-.heading{min-height:64px;margin-bottom:28px}
-.heading h1{font-size:32px}
-.host-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));align-items:start;gap:14px;background:transparent;border-radius:0}
-.host-card{width:auto;border-bottom:0;border-radius:16px}
-.host-footer{padding-left:72px}
-.empty{max-width:560px;margin:0 auto;padding-top:64px}
-.notice{max-width:740px}
-.bottom-nav{left:0;right:auto;top:0;bottom:0;width:180px;height:100vh;flex-direction:column;justify-content:center;gap:14px;padding:24px 18px;border-right:1px solid #232e3a}
-.nav-item{flex:none;width:100%;height:74px;max-width:none;gap:8px;border-radius:14px}
-.nav-item.selected{background:#1b2b3a}
-.nav-item.selected .nav-icon{background:transparent}
-.nav-icon{width:100%;height:32px}
-.nav-badge{right:calc(50% - 31px)}
-.settings-group,.setting-note,.section-label{max-width:900px;margin-left:0;margin-right:0}
-.setting{padding:18px 20px}
-.sheet-header{padding:12px 28px;min-height:68px}
-.form-content{padding:24px 36px 36px}
-.form-fields{width:100%;max-width:720px;margin:0 auto}
-.modal{left:180px}
-.toast{left:calc(180px + 24px);right:24px;bottom:24px;max-width:620px;margin-left:auto}
-.fatal{left:180px}
+
+/* Graphite surfaces and cobalt accents for the dark appearance. */
+:where([data-theme="dark"]) button{border-color:#62636d;background:#303035;color:#f1f1f3}
+:where([data-theme="dark"]) button:hover{background:#3b3c43}
+:where([data-theme="dark"]) button:active{background:#45464e}
+:where([data-theme="dark"]) button:focus-visible,:where([data-theme="dark"]) input:focus-visible,:where([data-theme="dark"]) textarea:focus-visible{outline-color:#9cb3ff}
+:where([data-theme="dark"]) .primary{background:#405fc6;border-color:#405fc6}
+:where([data-theme="dark"]) .primary:hover{background:#4a68cd}
+:where([data-theme="dark"]) .primary:active{background:#344fa8}
+:where([data-theme="dark"]) .danger{color:#f3aaa0}
+:where([data-theme="dark"]) .danger:hover{background:#553731}
+:where([data-theme="dark"]) input,:where([data-theme="dark"]) textarea{placeholder-color:#a2a5af}
+.shell[data-theme="dark"]{background:#1d1d20;color:#f1f1f3}
+:where([data-theme="dark"]) .sidebar{background:#18181b;border-right-color:#3c3c42}
+:where([data-theme="dark"]) .brand{background:#202023;border-bottom-color:#414147}
+:where([data-theme="dark"]) .source-heading,:where([data-theme="dark"]) .settings-preferences,:where([data-theme="dark"]) .group-title{border-color:#414147}
+:where([data-theme="dark"]) .nav-item{color:#acacb6}
+:where([data-theme="dark"]) .nav-item:hover{background:#3b3c43}
+:where([data-theme="dark"]) .nav-item.selected{color:#b0c3ff;background:#2b3554}
+:where([data-theme="dark"]) .nav-badge{color:#b0c3ff}
+:where([data-theme="dark"]) .nav-footer{border-top-color:#3c3c42}
+:where([data-theme="dark"]) .heading{border-bottom-color:#151518;background:linear-gradient(to bottom,#323236,#28282b)}
+:where([data-theme="dark"]) .host-heading h1,:where([data-theme="dark"]) .connection-count{border-color:#505058}
+:where([data-theme="dark"]) .host-tools button,:where([data-theme="dark"]) .editor-actions button:not(.primary),:where([data-theme="dark"]) .modal-actions button:not(.primary){border-color:#62636d;background:linear-gradient(to bottom,#3b3b41,#303035)}
+:where([data-theme="dark"]) .host-tools button:hover,:where([data-theme="dark"]) .editor-actions button:not(.primary):hover,:where([data-theme="dark"]) .modal-actions button:not(.primary):hover{background:#45464e}
+:where([data-theme="dark"]) .search{border-color:#62636d;background:#202023}
+:where([data-theme="dark"]) .search input{color:#f1f1f3}
+:where([data-theme="dark"]) .list-pane{background:#252528;border-color:#3c3c42}
+:where([data-theme="dark"]) .list-scroll,:where([data-theme="dark"]) .page-scroll,:where([data-theme="dark"]) .form-content,:where([data-theme="dark"]) .screens-panel{scrollbar-color:#60616c #232326}
+:where([data-theme="dark"]) .column-head{border-bottom-color:#3c3c42;background:#2e2e32;color:#acacb6}
+:where([data-theme="dark"]) .column-head .record-main>span:not(:last-child){border-color:#49494f}
+:where([data-theme="dark"]) .record-row:nth-child(even){background:#2b2b2f}
+:where([data-theme="dark"]) .record-row:hover,:where([data-theme="dark"]) .record-row:focus-within{background:#30394e}
+:where([data-theme="dark"]) .record-main:hover .record-name{color:#b0c3ff}
+:where([data-theme="dark"]) .record-row .record-name{color:#f1f1f3}
+:where([data-theme="dark"]) .record-row .record-address{color:#c9cad1}
+:where([data-theme="dark"]) .record-row .record-extra{color:#c9cad1}
+:where([data-theme="dark"]) .record-detail{color:#acacb6}
+:where([data-theme="dark"]) .row-actions button{color:#b0c3ff}
+:where([data-theme="dark"]) .row-actions button:hover{background:#2b3554;color:#b0c3ff}
+:where([data-theme="dark"]) .row-actions .danger{color:#f3aaa0}
+:where([data-theme="dark"]) .row-actions button[aria-pressed="true"]{color:#b0c3ff}
+:where([data-theme="dark"]) .statusbar{background:#212124;border-top-color:#3c3c42;color:#acacb6}
+:where([data-theme="dark"]) .status-dot{background:#91939e}
+:where([data-theme="dark"]) .status-dot.live{background:#8faaff}
+:where([data-theme="dark"]) .empty-art{background:#2b3554;border-color:#8199e5}
+:where([data-theme="dark"]) .empty p,:where([data-theme="dark"]) .form-help,:where([data-theme="dark"]) .quality-help,:where([data-theme="dark"]) .setting p,:where([data-theme="dark"]) .session-intro{color:#acacb6}
+:where([data-theme="dark"]) .group-title{color:#f1f1f3}
+:where([data-theme="dark"]) .settings-group{border-color:#3c3c42;background:#252528}
+:where([data-theme="dark"]) .setting,:where([data-theme="dark"]) .language-option{border-bottom-color:#3c3c42}
+:where([data-theme="dark"]) .language-option.selected,:where([data-theme="dark"]) .quality-option.selected{background:#2b3554;color:#b0c3ff}
+:where([data-theme="dark"]) .check-box{background:#28282d;border-color:#797b86}
+:where([data-theme="dark"]) .toggle[aria-checked="true"] .check-box{background:#8faaff;border-color:#8faaff}
+:where([data-theme="dark"]) .check-box span{color:#172348}
+:where([data-theme="dark"]) .toggle:hover .check-box{border-color:#adbeff}
+:where([data-theme="dark"]) .quality-option{background:#303035}
+:where([data-theme="dark"]) .quality-option.selected{border-color:#7383b0}
+:where([data-theme="dark"]) .quality-option:not(.selected):hover{background:#3b3c43}
+:where([data-theme="dark"]) .form-section label{color:#c9cad1}
+:where([data-theme="dark"]) .form-section input{border-color:#62636d;background:#202023;color:#f1f1f3}
+:where([data-theme="dark"]) .search:focus-within,:where([data-theme="dark"]) .form-section input:focus{border-color:#9cb3ff;outline-color:#9cb3ff}
+:where([data-theme="dark"]) .path-parent{color:#acacb6}
+:where([data-theme="dark"]) .editor-actions{border-top-color:#3c3c42;background:#222225}
+:where([data-theme="dark"]) .rdp-toolbar{background:#28282d;border-color:#3c3c42}
+:where([data-theme="dark"]) .rdp-toolbar button:hover{background:#3b3c43}
+:where([data-theme="dark"]) .rdp-toolbar button:active,:where([data-theme="dark"]) .rdp-toolbar button[aria-pressed="true"]{background:#45464e}
+:where([data-theme="dark"]) .rdp-toolbar.dragging .rdp-drag{background:#3b3c43}
+:where([data-theme="dark"]) .rdp-toolbar .danger:hover{background:#553731}
+:where([data-theme="dark"]) .rdp-dot{background:#d0b77a}
+:where([data-theme="dark"]) .rdp-dot.live{background:#8faaff}
+:where([data-theme="dark"]) .rdp-dot.closed{background:#df948c}
+:where([data-theme="dark"]) .rdp-keys{border-top-color:#3c3c42}
+:where([data-theme="dark"]) .rdp-info{border-top-color:#3c3c42}
+:where([data-theme="dark"]) .rdp-info p{color:#acacb6}
+:where([data-theme="dark"]) .rdp-status{color:#acacb6}
+:where([data-theme="dark"]) .rdp-tooltip{background:#e5e6ed;color:#23242a}
+:where([data-theme="dark"]) .modal-card{background:#252528;border-color:#62636d}
+:where([data-theme="dark"]) .modal-card p{color:#c9cad1}
+:where([data-theme="dark"]) .toast{background:#e5e6ed;border-color:#62636d;color:#23242a}
+:where([data-theme="dark"]) .fatal{background:#1d1d20}
+:where([data-theme="dark"]) .fatal p{color:#acacb6}
+
+@media(max-width:899px){
+ .sidebar{width:148px}
+ .page{left:148px}
+ .host-tools .search{width:180px}
+ .record-main{gap:8px}
 }
-
-@media(min-width:760px) and (max-width:959px){
-.shell{grid-template-columns:84px minmax(0,1fr)}
-.page{left:84px;padding-left:24px;padding-right:24px}
-.bottom-nav{width:84px;padding:24px 10px}
-.modal,.fatal{left:84px}
-.toast{left:108px}
-.host-list{grid-template-columns:1fr}
+@media(max-width:719px){
+ .sidebar{width:112px;padding:0 4px}
+ .page{left:112px}
+ .brand{padding:0 8px;margin-left:-4px;margin-right:-4px;gap:5px}
+ .nav-item{padding:0 5px;gap:5px;font-size:12px}
+ .group-count{display:none}
+ .heading{height:44px;padding:0 10px}
+ .page-scroll,.form-content{padding:12px}
+ .editor-actions,.statusbar{padding-left:10px;padding-right:10px}
+ .form-columns,.settings-layout{display:block}
+ .settings-preferences{width:100%;padding-left:0;border:0}
+ .column-head,.record-row{gap:5px;padding-left:8px;padding-right:6px}
 }
-
-@media(max-width:360px){.page{padding-left:16px;padding-right:16px}
-.host-connect{gap:10px;padding-left:12px;padding-right:12px}
-.host-footer{padding-left:68px}
-.setting{gap:8px;padding-left:12px;padding-right:12px}
-.setting-copy{font-size:14px}
-.stepper button{width:44px}
-.form-content{padding-left:16px;padding-right:16px}
+@media(min-width:520px) and (max-width:719px){
+ .host-heading h1{max-width:32%}
+ .host-tools .search{width:155px}
+ .host-table .record-display,.host-table .record-extra{display:none}
+ .host-table .column-head .record-address{border:0}
+}
+@media(max-width:519px){
+ .host-heading{flex-wrap:wrap;height:auto;padding:8px 10px;gap:6px}
+ .host-heading h1{max-width:100%;border:0;padding:0}
+ .host-tools{flex:auto;width:100%;gap:5px}
+ .host-tools .search{flex:1;min-width:0}
+ .host-table .column-head .record-display,.host-table .column-head .record-extra{display:none}
+ .host-table .column-head .record-address{display:none}
+ .record-row .record-main{flex-direction:column;align-items:flex-start;gap:2px;padding:4px 0}
+ .record-row .record-name,.record-row .record-extra,.record-row .record-address,.record-row .record-display{flex:none;max-width:100%}
+ .record-row .record-display,.record-row .record-extra{font-size:11px}
+ #sessions-page .column-head{display:none}
 }
 </style></head>
-<body><main id="shell" class="shell">
+<body><main id="shell" class="shell" data-theme="light">
+<nav id="sidebar" class="sidebar" aria-label="主导航">
+ <div class="brand"><img src="icons/icon.svg" alt=""><span id="library-title">连接库</span></div>
+ <div class="library-scroll">
+ <button id="nav-hosts" class="nav-item selected" aria-current="page"><span class="nav-icon"><img class="nav-default" src="icons/hosts.svg" alt=""><img class="nav-selected" src="icons/hosts-active.svg" alt=""></span><span class="nav-label" id="l10n-21">全部主机</span></button>
+ <button id="nav-favorites" class="nav-item"><img src="icons/star.svg" alt=""><span class="nav-label" id="favorites-label">已收藏</span></button>
+ <button id="nav-sessions" class="nav-item"><span class="nav-icon"><img class="nav-default" src="icons/desktop.svg" alt=""><img class="nav-selected" src="icons/desktop-active.svg" alt=""></span><span class="nav-label" id="l10n-22">会话</span><span id="session-count" class="nav-badge" hidden></span></button>
+ <div id="source-groups" hidden><h2 class="source-heading" id="groups-title">分组</h2><div id="group-list" role="group" aria-labelledby="groups-title"></div></div>
+ </div>
+ <div class="nav-footer"><button id="nav-settings" class="nav-item"><span class="nav-icon"><img class="nav-default" src="icons/settings.svg" alt=""><img class="nav-selected" src="icons/settings-active.svg" alt=""></span><span class="nav-label" id="l10n-23">设置</span></button></div>
+</nav>
 <section id="hosts-page" class="page">
- <div class="heading"><h1 id="l10n-1">远程桌面</h1><button id="add-host" class="primary icon-button add-host" aria-label="添加主机"><img src="icons/plus.svg" alt=""></button></div>
- <div class="search"><img src="icons/search.svg" alt=""><input id="search" placeholder="搜索主机、地址或分组" aria-label="搜索主机" autocomplete="off"></div>
- <div class="filters" role="group" aria-label="筛选主机" id="l10n-41"><button id="filter-all" class="filter selected" aria-pressed="true">全部主机</button><button id="filter-favorite" class="filter" aria-pressed="false">已收藏</button></div>
- <div class="section-label"><span id="host-count">0 台主机</span><span class="connection-count"><i id="active-dot" class="status-dot"></i><span id="active-count">暂无连接</span></span></div>
- <div id="host-list" class="host-list"></div>
- <div id="hosts-empty" class="empty"><div class="empty-art"><img class="empty-icon" src="icons/desktop.svg" alt=""></div><h2 id="empty-title">你的桌面，从这里开始</h2><p id="empty-description">保存一台 Windows 主机，轻点即可连接。
-密码仅在本机加密保存。</p><button id="empty-add" class="primary">添加主机</button></div>
- <aside id="hosts-notice" class="notice"><img src="icons/shield.svg" alt=""><div><strong id="l10n-2">会话直接建立在你与主机之间。</strong><p id="l10n-3">凭据保存在本机加密的凭据库中，不会上传到任何服务器。</p></div></aside>
+ <div class="heading host-heading"><h1 id="collection-title">全部主机</h1><div class="host-tools"><button id="add-host" aria-label="添加主机"><img src="icons/plus.svg" alt=""><span id="add-host-label">添加主机</span></button><div class="search"><img src="icons/search.svg" alt=""><input id="search" placeholder="搜索主机、地址或分组" aria-label="搜索主机" autocomplete="off"></div></div></div>
+ <div class="list-pane host-table">
+ <div class="column-head"><div class="record-main"><span class="record-name" id="hosts-col-name">名称</span><span class="record-address" id="hosts-col-address">主机地址</span><span class="record-display" id="hosts-col-display">连接信息</span><span class="record-extra" id="hosts-col-group">分组</span></div><span class="row-actions" id="hosts-col-actions">操作</span></div>
+ <div class="list-scroll">
+ <div id="host-list"></div>
+ <div id="hosts-empty" class="empty"><div class="empty-art"><img class="empty-icon" src="icons/desktop.svg" alt=""></div><h2 id="empty-title">尚未添加主机</h2><p id="empty-description">添加一台主机，即可从列表打开连接。</p><button id="empty-add" class="primary">添加主机</button></div>
+ </div></div>
+ <div class="statusbar"><span id="host-count">0 台主机</span><span class="connection-count"><i id="active-dot" class="status-dot"></i><span id="active-count">暂无连接</span></span></div>
 </section>
 <section id="sessions-page" class="page" hidden>
- <div class="heading"><h1 id="l10n-4">会话</h1><button id="close-all" class="quiet danger heading-action">全部断开</button></div><p id="session-summary" class="session-intro">连接过的桌面会显示在这里</p>
- <div id="session-list" class="host-list"></div><div id="sessions-empty" class="empty"><div class="empty-art"><img class="empty-icon" src="icons/desktop.svg" alt=""></div><h2 id="l10n-5">还没有会话</h2><p id="l10n-6">选择一台主机，打开远程桌面。
+ <div class="heading"><h1 id="l10n-4">会话</h1><button id="close-all" class="danger">全部断开</button></div>
+ <div class="list-pane">
+ <div class="column-head"><div class="record-main"><span class="record-name" id="sessions-col-name">名称</span><span class="record-address" id="sessions-col-address">主机地址</span><span class="record-extra" id="sessions-col-state">状态</span></div><span class="row-actions" id="sessions-col-actions">操作</span></div>
+ <div class="list-scroll"><div id="session-list"></div><div id="sessions-empty" class="empty"><div class="empty-art"><img class="empty-icon" src="icons/desktop.svg" alt=""></div><h2 id="l10n-5">还没有会话</h2><p id="l10n-6">选择一台主机，打开远程桌面。
 切换页面时，会话会继续保留。</p><button id="go-hosts" class="primary">选择主机</button></div>
+ </div></div>
+<p id="session-summary" class="session-intro">连接过的桌面会显示在这里</p>
 </section>
 <section id="settings-page" class="page" hidden>
  <div class="heading"><h1 id="l10n-7">设置</h1></div>
- <div class="section-label"><span id="language-title">语言</span></div><div id="language-list" class="settings-group language-list" role="group" aria-labelledby="language-title"></div>
- <div class="section-label" id="l10n-8">连接</div><div class="settings-group">
- <div class="setting"><div class="setting-copy"><span id="l10n-10">自动重连</span><p id="l10n-11">网络恢复后重新连接服务器</p></div><button id="setting-reconnect" class="toggle on" role="switch" aria-label="自动重连" aria-checked="true"><span class="toggle-track"><span class="toggle-thumb"></span></span></button></div>
- <div class="setting"><div class="setting-copy"><span id="l10n-30">剪贴板同步</span><p id="l10n-31">允许在本机与远程桌面之间复制文本</p></div><button id="setting-clipboard" class="toggle on" role="switch" aria-label="剪贴板同步" aria-checked="true"><span class="toggle-track"><span class="toggle-thumb"></span></span></button></div>
+ <div class="page-scroll"><div class="settings-layout"><div class="settings-main">
+ <div class="group-title" id="l10n-8">连接</div><div class="settings-group">
+ <div class="setting"><div class="setting-copy"><button id="setting-reconnect" class="toggle" role="checkbox" aria-label="自动重连" aria-checked="true" aria-describedby="l10n-11"><span class="check-box" aria-hidden="true"><span>✓</span></span><span id="l10n-10">自动重连</span></button><p id="l10n-11">网络恢复后重新连接服务器</p></div></div>
+ <div class="setting"><div class="setting-copy"><button id="setting-clipboard" class="toggle" role="checkbox" aria-label="剪贴板同步" aria-checked="true" aria-describedby="l10n-31"><span class="check-box" aria-hidden="true"><span>✓</span></span><span id="l10n-30">剪贴板同步</span></button><p id="l10n-31">允许在本机与远程桌面之间复制文本</p></div></div>
  <div class="setting"><div class="setting-copy"><span id="l10n-32">适应窗口</span><p id="l10n-33">仅在本地等比缩放，完整显示远程桌面，不随窗口更改远程分辨率。</p></div></div></div>
- <div class="section-label" id="l10n-17">安全</div><div class="settings-group"><div class="setting"><div class="setting-copy"><span id="l10n-18">凭据保存在本机</span><p id="background-note">主机密码经 AES-GCM 加密后写入本地凭据库，密钥由操作系统保管。删除主机时同时删除其凭据。</p></div></div></div>
- <div class="settings-footer"><img src="icons/shield.svg" alt=""><span id="l10n-20">OnRDP · 凭据仅在本机加密保存</span></div>
+ <div class="group-title"><img src="icons/shield.svg" width="16" height="16" alt=""><span id="l10n-17">安全</span></div><div class="settings-group"><div class="setting"><div class="setting-copy"><span id="l10n-18">凭据保存在本机</span><p id="background-note">主机密码经 AES-GCM 加密后写入本地凭据库，密钥由操作系统保管。删除主机时同时删除其凭据。</p></div></div></div>
+ </div><div class="settings-preferences">
+ <h3 class="group-title" id="appearance-title">外观</h3>
+ <div class="theme-options quality-options" role="group" aria-labelledby="appearance-title"><button id="theme-light" class="quality-option selected" aria-pressed="true">亮色</button><button id="theme-dark" class="quality-option" aria-pressed="false">暗色</button></div>
+ <div class="group-title"><span id="language-title">语言</span></div><div id="language-list" class="settings-group" role="group" aria-labelledby="language-title"></div>
+ </div></div></div>
 </section>
-<nav id="bottom-nav" class="bottom-nav" aria-label="主导航"><button id="nav-hosts" class="nav-item selected" aria-current="page"><span class="nav-icon"><img class="nav-default" src="icons/hosts.svg" alt=""><img class="nav-selected" src="icons/hosts-active.svg" alt=""></span><span id="l10n-21">主机</span></button><button id="nav-sessions" class="nav-item"><span class="nav-icon"><img class="nav-default" src="icons/desktop.svg" alt=""><img class="nav-selected" src="icons/desktop-active.svg" alt=""><span id="session-count" class="nav-badge" hidden></span></span><span id="l10n-22">会话</span></button><button id="nav-settings" class="nav-item"><span class="nav-icon"><img class="nav-default" src="icons/settings.svg" alt=""><img class="nav-selected" src="icons/settings-active.svg" alt=""></span><span id="l10n-23">设置</span></button></nav>
-<section id="edit-page" class="sheet-page" hidden>
- <header class="sheet-header"><button id="edit-cancel" class="quiet">取消</button><h2 id="edit-title">添加主机</h2><button id="edit-save" class="save-action">保存</button></header>
- <div id="form-content" class="form-content"><div class="form-fields">
- <div class="section-label" id="l10n-24">连接信息</div><div class="form-section">
- <div><label for="field-name" id="l10n-25">名称</label><input id="field-name" placeholder="例如：办公室电脑" autocomplete="off"></div>
- <div class="form-row"><div class="wide"><label for="field-address" id="l10n-26">主机地址</label><input id="field-address" placeholder="IP 地址或域名" autocomplete="off" autocapitalize="none" spellcheck="false"></div><div class="narrow"><label for="field-port" id="l10n-27">端口</label><input id="field-port" type="number" value="3389" inputmode="numeric"></div></div>
- <div><label for="field-user" id="l10n-28">用户名</label><input id="field-user" placeholder="Administrator" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
- <div><label for="field-domain" id="l10n-29">域（可选）</label><input id="field-domain" placeholder="例如：CORP" autocomplete="off"></div>
- <div><label for="field-group" id="l10n-40">分组（可选）</label><input id="field-group" placeholder="例如：办公环境" autocomplete="off"></div></div>
- <div class="section-label" id="l10n-30b">凭据</div><div class="form-section"><div>
- <label for="field-password" id="l10n-31b">登录密码</label><input id="field-password" type="password" placeholder="输入远程桌面密码" autocomplete="off"></div></div>
- <div class="section-label" id="l10n-34">显示与共享</div><div class="form-section">
- <div><label id="quality-label">画面质量</label><div class="quality-options" role="group" aria-labelledby="quality-label"><button id="quality-smooth" class="quality-option" aria-pressed="false">流畅</button><button id="quality-balanced" class="quality-option" aria-pressed="false">均衡</button><button id="quality-high" class="quality-option selected" aria-pressed="true">高清</button></div><p id="quality-help" class="quality-help">流畅：最高 1280 × 720、16 位色；均衡：最高 1920 × 1080、32 位色；高清：原始分辨率。前两档减少桌面特效，全屏同样受限。保存后重新连接生效。</p></div>
+
+<section id="edit-page" class="page" hidden>
+ <header class="heading"><div class="editor-path"><button id="edit-back" class="path-parent">主机</button><img src="icons/chevron.svg" alt=""><h1 id="edit-title">添加主机</h1></div></header>
+ <div id="form-content" class="form-content">
+ <div id="host-protocol" class="quality-options protocol-picker" hidden><button id="protocol-rdp" class="quality-option">RDP</button><button id="protocol-rustdesk" class="quality-option">RustDesk</button><button id="protocol-android" class="quality-option">Android</button></div>
+ <div class="form-columns"><div class="form-column">
+ <div class="group-title" id="l10n-24">连接信息</div><div class="form-section">
+ <div class="form-row"><div class="wide"><label for="field-name" id="l10n-25">名称</label><input id="field-name" placeholder="例如：办公室电脑" autocomplete="off"></div><div class="wide"><label for="field-group" id="l10n-40">分组（可选）</label><input id="field-group" placeholder="例如：办公环境" autocomplete="off"></div></div>
+ <div id="rdp-address-fields" class="form-row"><div class="wide"><label for="field-address" id="l10n-26">主机地址</label><input id="field-address" placeholder="IP 地址或域名" autocomplete="off" autocapitalize="none" spellcheck="false"></div><div class="narrow"><label for="field-port" id="l10n-27">端口</label><input id="field-port" type="number" value="3389" inputmode="numeric"></div></div>
+ <div id="rustdesk-fields" hidden><label for="field-rustdesk-id" id="rustdesk-id-label">RustDesk 设备 ID 或 IP 地址</label><input id="field-rustdesk-id" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="rustdesk-help"><p id="rustdesk-help" class="form-help">IP 直连需在远端启用 RustDesk 的直连功能。</p></div>
+ <div id="rustdesk-credentials" hidden><label for="field-rustdesk-password" id="rustdesk-password-label">RustDesk 密码（可选）</label><input id="field-rustdesk-password" type="password" autocomplete="off"></div>
+ </div>
+ <div id="rdp-credentials"><div class="group-title" id="l10n-30b">凭据</div><div class="form-section">
+ <div class="form-row"><div class="wide"><label for="field-user" id="l10n-28">用户名</label><input id="field-user" placeholder="Administrator" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
+ <div class="wide"><label for="field-domain" id="l10n-29">域（可选）</label><input id="field-domain" placeholder="例如：CORP" autocomplete="off"></div></div>
+ <div><label for="field-password" id="l10n-31b">登录密码</label><input id="field-password" type="password" placeholder="输入远程桌面密码" autocomplete="off"></div></div>
+ </div></div>
+ <div id="android-fields" class="form-column" hidden>
+ <div class="screens-header"><h3 id="android-detected">ADB 设备</h3><button id="android-refresh" class="quiet">刷新</button></div>
+ <div id="android-devices" class="settings-group"></div><p id="android-status" class="form-help" role="status"></p>
+ <div class="form-section"><div class="quality-options"><button id="android-serial" class="quality-option">设备序列号</button><button id="android-wireless" class="quality-option">无线连接</button></div>
+ <div><label for="field-adb" id="android-address-label">设备序列号</label><input id="field-adb" autocomplete="off" spellcheck="false"></div></div>
+ <p id="android-wireless-help" class="form-help">使用设备显示的连接端口。首次使用无线调试时，请先用 adb pair 配对。</p></div>
+ <div id="rustdesk-network" class="form-column" hidden>
+ <div class="group-title" id="rustdesk-network-title">ID 与中继服务器（可选）</div><div class="form-section">
+ <div><label for="field-rustdesk-id-server" id="rustdesk-id-server-label">ID 服务器</label><input id="field-rustdesk-id-server" placeholder="hbbs.example.com:21116" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
+ <div><label for="field-rustdesk-key" id="rustdesk-key-label">服务器公钥</label><input id="field-rustdesk-key" placeholder="id_ed25519.pub" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
+ <div><label for="field-rustdesk-relay-server" id="rustdesk-relay-server-label">中继服务器</label><input id="field-rustdesk-relay-server" placeholder="hbbr.example.com:21117" aria-describedby="rustdesk-relay-help" autocomplete="off" autocapitalize="none" spellcheck="false">
+ <p class="form-help" id="rustdesk-relay-help">中继地址由被控端通告。请在被控端的 RustDesk 网络设置中填写此地址，或导入服务器配置。</p></div>
+ <div><button id="rustdesk-copy-config">复制被控端配置</button></div>
+ <button id="rustdesk-force-relay" class="toggle" role="checkbox" aria-checked="false"><span class="check-box" aria-hidden="true"><span>✓</span></span><span id="rustdesk-force-relay-label">始终使用中继</span></button>
+ </div></div>
+ <div id="rdp-options" class="form-column">
+ <div class="group-title" id="l10n-34">显示与共享</div><div class="form-section">
+ <div><label id="quality-label">画面质量</label><div class="quality-options" role="group" aria-labelledby="quality-label"><button id="quality-smooth" class="quality-option" aria-pressed="false">流畅</button><button id="quality-balanced" class="quality-option" aria-pressed="false">均衡</button><button id="quality-high" class="quality-option selected" aria-pressed="true">高清</button></div><p id="quality-help" class="quality-help">流畅：窗口最高 1280 × 720、16 位色；均衡：窗口最高 1920 × 1080、32 位色；高清：原始分辨率。全屏均适配显示器实际像素，前两档减少桌面特效。保存后重新连接生效。</p></div>
  <div class="form-row"><div class="wide"><label for="field-width" id="l10n-35">桌面宽度</label><input id="field-width" type="number" value="1600" inputmode="numeric"></div><div class="wide"><label for="field-height" id="l10n-36">桌面高度</label><input id="field-height" type="number" value="900" inputmode="numeric"></div></div>
- <div><label for="field-clipboard" id="l10n-37">剪贴板</label><button id="field-clipboard" class="toggle on" role="switch" aria-label="剪贴板重定向" aria-checked="true"><span class="toggle-track"><span class="toggle-thumb"></span></span></button></div>
- <div><label for="field-console" id="l10n-45">控制台会话</label><button id="field-console" class="toggle" role="switch" aria-label="连接控制台会话" aria-checked="false"><span class="toggle-track"><span class="toggle-thumb"></span></span></button></div>
+ <div class="form-checks"><button id="field-clipboard" class="toggle" role="checkbox" aria-label="剪贴板重定向" aria-checked="true"><span class="check-box" aria-hidden="true"><span>✓</span></span><span id="l10n-37">剪贴板</span></button>
+ <button id="field-console" class="toggle" role="checkbox" aria-label="连接控制台会话" aria-checked="false"><span class="check-box" aria-hidden="true"><span>✓</span></span><span id="l10n-45">控制台会话</span></button></div>
  </div>
- </div><p class="form-help" id="l10n-38">连接使用 TLS 与网络级身份验证（NLA）。密码仅在本机加密保存。</p>
- <div class="form-actions"><button id="edit-delete" class="danger" hidden>删除主机</button></div>
- </div>
+ <p class="form-help" id="l10n-38">连接使用 TLS 与网络级身份验证（NLA）。密码仅在本机加密保存。</p></div>
+ </div></div>
+ <footer class="editor-actions"><button id="edit-delete" class="danger" hidden>删除主机</button><button id="edit-cancel">取消</button><button id="edit-save" class="primary">保存</button></footer>
 </section>
 <section id="rdp-page" class="rdp-page" hidden>
  <div id="rdp-stage" class="rdp-stage">
@@ -283,15 +420,40 @@ h3{font-size:16px}
   <div class="rdp-toolbar-row">
    <button id="rdp-drag" aria-label="移动工具条" title="移动工具条" class="rdp-drag"><img src="icons/toolbar-drag.svg" alt=""></button>
    <button id="rdp-toolbar-toggle" class="rdp-toggle" aria-label="收起工具条" title="收起工具条" aria-expanded="true" aria-controls="rdp-tools"><img id="rdp-toolbar-toggle-icon" src="icons/toolbar-collapse.svg" alt=""><span id="rdp-dot" class="rdp-dot"></span></button>
-   <div id="rdp-tools" class="rdp-tools"><button id="rdp-back" aria-label="返回会话" title="返回会话" ><img src="icons/back.svg" alt=""></button><button id="rdp-info-toggle" aria-label="连接信息" title="连接信息" aria-pressed="false" aria-controls="rdp-info"><img src="icons/toolbar-info.svg" alt=""></button><button id="rdp-fullscreen" aria-label="全屏" title="全屏" ><img id="rdp-fullscreen-icon" src="icons/toolbar-fullscreen.svg" alt=""></button><button id="rdp-reconnect" aria-label="重连" title="重连" ><img src="icons/toolbar-reconnect.svg" alt=""></button><button id="rdp-keys-toggle" aria-label="远程快捷键" title="远程快捷键" aria-pressed="false" aria-controls="l10n-43"><img src="icons/toolbar-keyboard.svg" alt=""></button><button id="rdp-close" aria-label="断开" title="断开" class="danger"><img src="icons/toolbar-disconnect.svg" alt=""></button></div>
+   <div id="rdp-tools" class="rdp-tools"><button id="android-back" aria-label="返回" title="返回" hidden><img src="icons/back.svg" alt=""></button><button id="screens-toggle" aria-label="切换屏幕" title="切换屏幕" aria-expanded="false" aria-controls="screens-panel" hidden><img src="icons/desktop.svg" alt=""></button><button id="rdp-back" aria-label="返回会话" title="返回会话" ><img src="icons/back.svg" alt=""></button><button id="rdp-info-toggle" aria-label="连接信息" title="连接信息" aria-pressed="false" aria-controls="rdp-info"><img src="icons/toolbar-info.svg" alt=""></button><button id="rdp-fullscreen" aria-label="全屏" title="全屏" ><img id="rdp-fullscreen-icon" src="icons/toolbar-fullscreen.svg" alt=""></button><button id="rdp-reconnect" aria-label="重连" title="重连" ><img src="icons/toolbar-reconnect.svg" alt=""></button><button id="rdp-keys-toggle" aria-label="远程快捷键" title="远程快捷键" aria-pressed="false" aria-controls="l10n-43"><img src="icons/toolbar-keyboard.svg" alt=""></button><button id="rdp-close" aria-label="断开" title="断开" class="danger"><img src="icons/toolbar-disconnect.svg" alt=""></button></div>
   </div>
   <div id="l10n-43" class="rdp-keys" aria-label="远程快捷键" hidden><button id="key-cad" aria-label="Ctrl+Alt+Del" title="Ctrl+Alt+Del" ><img src="icons/toolbar-cad.svg" alt=""></button><button id="key-alt-tab" aria-label="Alt+Tab" title="Alt+Tab" ><img src="icons/toolbar-alt-tab.svg" alt=""></button><button id="key-win" aria-label="Win" title="Win" ><img src="icons/toolbar-win.svg" alt=""></button><button id="key-esc" aria-label="Esc" title="Esc" ><img src="icons/toolbar-esc.svg" alt=""></button><button id="key-tab" aria-label="Tab" title="Tab" ><img src="icons/toolbar-tab.svg" alt=""></button><button id="key-enter" aria-label="Enter" title="Enter" ><img src="icons/toolbar-enter.svg" alt=""></button><button id="key-backspace" aria-label="退格" title="退格" ><img src="icons/toolbar-backspace.svg" alt=""></button></div>
+  <div id="android-keys" class="rdp-keys" role="group" aria-label="安卓按键" hidden>
+   <button id="android-key:home" aria-label="主屏幕" title="主屏幕"><img src="icons/toolbar-home.svg" alt=""></button><button id="android-key:recents" aria-label="最近任务" title="最近任务"><img src="icons/toolbar-recents.svg" alt=""></button>
+   <button id="android-key:volume-down" aria-label="音量减" title="音量减"><img src="icons/toolbar-volume-down.svg" alt=""></button><button id="android-key:volume-up" aria-label="音量加" title="音量加"><img src="icons/toolbar-volume-up.svg" alt=""></button><button id="android-key:power" aria-label="电源" title="电源"><img src="icons/toolbar-power.svg" alt=""></button>
+  </div>
+  <div id="screens-panel" class="screens-panel" hidden>
+   <div class="screens-header"><h3 id="screens-title">切换屏幕</h3><button id="screens-refresh" aria-label="刷新" title="刷新"><img src="icons/toolbar-reconnect.svg" alt=""></button></div>
+   <p id="screens-status" class="form-help" role="status" hidden></p><div id="screens-list" class="settings-group"></div>
+  </div>
   <div id="rdp-info" class="rdp-info" hidden><h2 id="rdp-title">远程桌面</h2><p id="rdp-address" class="mono"></p><div class="rdp-status"><span id="rdp-status">正在连接…</span><span id="rdp-size" class="mono">1600 × 900</span></div></div>
  </div>
  <div id="rdp-tooltip" class="rdp-tooltip" role="tooltip" hidden></div>
 </section>
 <div id="confirm-modal" class="modal" hidden><div id="confirm-card" class="modal-card"><h2 id="confirm-title">确认操作</h2><p id="confirm-description"></p><div class="modal-actions"><button id="confirm-cancel">取消</button><button id="confirm-ok" class="danger">确认</button></div></div></div>
 <div id="toast" class="toast" role="status" hidden></div><div id="fatal" class="fatal" hidden><h2 id="l10n-40b">无法打开安全存储</h2><p id="fatal-message"></p></div>
-<div hidden><button id="language-template" class="language-option" aria-pressed="false"><span id="language-name"></span><span id="language-mark" aria-hidden="true"></span></button><article id="host-template" class="host-card"><button id="host-connect" class="host-connect"><span class="host-symbol">▣</span><span class="host-copy"><span id="host-name" class="host-name"></span><span id="host-address" class="host-address"></span></span><span id="host-state" class="host-state"></span><img class="host-chevron" src="icons/chevron.svg" alt=""></button><div class="host-footer"><span id="host-meta" class="host-meta"></span><div class="host-actions"><button id="host-favorite">收藏</button><button id="host-edit">编辑</button></div></div></article>
-<article id="session-template" class="host-card"><button id="session-open" class="host-connect"><span class="host-symbol">▣</span><span class="host-copy"><span id="session-name" class="host-name"></span><span id="session-address" class="host-address"></span></span><span id="session-state" class="host-state"></span><img class="host-chevron" src="icons/chevron.svg" alt=""></button><div class="host-footer"><span id="session-meta" class="host-meta"></span><div class="host-actions"><button id="session-close" class="danger">断开</button></div></div></article></div>
+<div hidden><button id="language-template" class="language-option" aria-pressed="false"><span id="language-name"></span><span id="language-mark" aria-hidden="true"></span></button>
+<button id="group-template" class="nav-item"><img src="icons/folder.svg" alt=""><span id="group-name" class="group-name"></span><span id="group-count" class="group-count"></span></button>
+<article id="host-template" class="record-row">
+ <button id="host-connect" class="record-main">
+  <span class="record-name device-name"><img id="host-device" src="icons/desktop.svg" alt=""><span id="host-name"></span></span>
+  <span id="host-address" class="record-address"></span><span id="host-detail" class="record-display"></span>
+  <span class="record-extra"><span id="host-meta"></span><span id="host-state" class="record-detail" hidden></span></span>
+ </button>
+ <div class="row-actions"><button id="host-favorite" class="icon-action" aria-label="收藏" aria-pressed="false"><img class="star-outline" src="icons/star.svg" alt=""><img class="star-fill" src="icons/star-fill.svg" alt=""></button><button id="host-edit" class="icon-action" aria-label="编辑"><img src="icons/pencil-simple.svg" alt=""></button></div>
+</article>
+<article id="session-template" class="record-row">
+ <button id="session-open" class="record-main">
+  <span class="record-name"><span id="session-name"></span><span id="session-meta" class="record-detail"></span></span>
+  <span id="session-address" class="record-address"></span><span id="session-state" class="record-extra"></span>
+ </button>
+ <div class="row-actions"><button id="session-close" class="danger">断开</button></div>
+</article>
+<button id="android-device-template" class="language-option"><span id="device-name"></span><span id="device-serial" class="mono"></span></button>
+</div>
 </main></body></html>

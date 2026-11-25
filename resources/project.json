@@ -1,6 +1,6 @@
 {
   "entry": "main.json",
-  "clearColor": "#0f1216",
+  "clearColor": "#f7f7f8",
   "engine": {},
   "scenes": [
     "main.json"

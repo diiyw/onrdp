@@ -12,6 +12,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"runtime/cgo"
 	"strings"
@@ -36,7 +37,6 @@ type inputEvent struct {
 // The Go framebuffer belongs to paintMu and survives native disconnect teardown.
 type nativeSession struct {
 	owner         *Client
-	quality       Quality // immutable after publication to Client
 	nativeMu      sync.Mutex
 	native        *C.onrdp_context
 	queueMu       sync.Mutex
@@ -105,19 +105,27 @@ func (s *nativeSession) run(cfg Config) {
 	}
 }
 
-func (s *nativeSession) attempt(cfg Config) (error, bool, bool) {
+// Quality limits the initial windowed size. An explicit display request already
+// selects the desired pixels (including native fullscreen), also on reconnect.
+func (s *nativeSession) desktopResolution(cfg Config) (int, int) {
+	width, height := cfg.Quality.Resolution(cfg.Width, cfg.Height)
 	s.queueMu.Lock()
 	if s.desktopWidth > 0 && s.desktopHeight > 0 {
-		cfg.Width, cfg.Height = s.desktopWidth, s.desktopHeight
+		width, height = s.desktopWidth, s.desktopHeight
 	}
 	s.queueMu.Unlock()
-	cfg.Width, cfg.Height = cfg.Quality.Resolution(cfg.Width, cfg.Height)
+	return clamp(width, 200, 8192) &^ 1, clamp(height, 200, 8192)
+}
+
+func (s *nativeSession) attempt(cfg Config) (error, bool, bool) {
+	cfg.Width, cfg.Height = s.desktopResolution(cfg)
 	handle := cgo.NewHandle(s)
 	defer handle.Delete()
 	host, user, password, domain := C.CString(cfg.Host), C.CString(cfg.Username), C.CString(cfg.Password), C.CString(cfg.Domain)
 	ctx := C.onrdp_new(C.uintptr_t(handle), host, C.int(clamp(cfg.Port, 1, 65535)), user, password, domain,
-		C.int(clamp(cfg.Width, 200, 8192)&^1), C.int(clamp(cfg.Height, 200, 8192)), boolInt(cfg.Clipboard), boolInt(cfg.Console),
-		C.int(cfg.Quality.colorDepth()), boolInt(cfg.Quality.Normalized() != QualityHigh))
+		C.int(cfg.Width), C.int(cfg.Height), boolInt(cfg.Clipboard), boolInt(cfg.Console),
+		C.int(cfg.Quality.colorDepth()), boolInt(cfg.Quality.Normalized() != QualityHigh),
+		boolInt(os.Getenv("ONRDP_HW_DECODE") != "0"))
 	C.free(unsafe.Pointer(host))
 	C.free(unsafe.Pointer(user))
 	C.free(unsafe.Pointer(password))
@@ -247,7 +255,6 @@ func (s *nativeSession) SetClipboard(text string) error {
 }
 
 func (s *nativeSession) ResizeDesktop(width, height int) {
-	width, height = s.quality.Resolution(width, height)
 	s.queueMu.Lock()
 	s.desktopWidth, s.desktopHeight = clamp(width, 200, 8192)&^1, clamp(height, 200, 8192)
 	s.queueMu.Unlock()

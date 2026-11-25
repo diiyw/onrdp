@@ -5,7 +5,8 @@
 typedef struct onrdp_context onrdp_context;
 onrdp_context* onrdp_new(uintptr_t handle, const char* host, int port,
     const char* user, const char* password, const char* domain,
-    int width, int height, int clipboard, int console, int color_depth, int reduced_effects);
+    int width, int height, int clipboard, int console, int color_depth, int reduced_effects,
+    int hardware_decode);
 int onrdp_run(onrdp_context* ctx);
 void onrdp_abort(onrdp_context* ctx);
 void onrdp_wake(onrdp_context* ctx);

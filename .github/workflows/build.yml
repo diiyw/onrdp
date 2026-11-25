@@ -1,0 +1,193 @@
+name: Build desktop installers
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (for example v0.2.0). Leave blank to build only.'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ inputs.release_tag || github.ref }}
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          if [[ -n "$RELEASE_TAG" && ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo 'Use a release tag in the form vMAJOR.MINOR.PATCH.' >&2
+            exit 1
+          fi
+          version="${RELEASE_TAG#v}"
+          echo "version=${version:-0.0.0}" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config nasm libva-dev libdrm-dev \
+            freerdp3-dev libwinpr3-dev libx11-dev libxrandr-dev libxext-dev libxrender-dev \
+            libxi-dev libwayland-dev libxkbcommon-dev libgl-dev
+          pkg-config --atleast-version=3.32 freerdp3
+      - name: Test and package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          go test ./...
+          scripts/build-linux.sh
+          bash scripts/package-linux-deb.sh "$VERSION"
+          sudo apt-get install -y ./dist/linux/onrdp-linux-amd64.deb
+          test -x /usr/bin/onrdp
+          test -s /opt/onrdp/resources/base.dat
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-linux-amd64
+          path: dist/linux/onrdp-linux-amd64.deb
+          if-no-files-found: error
+
+  macos:
+    name: macOS ${{ matrix.arch }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build FreeRDP
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: |
+          brew install pkgconf openssl@3 nasm
+          scripts/build-freerdp-macos.sh
+      - name: Build and verify disk image
+        env:
+          ARCH: ${{ matrix.arch }}
+          ONRDP_RELEASE_VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          test "$(go env GOARCH)" = "$ARCH"
+          scripts/build-macos.sh
+          stage="$(mktemp -d)"
+          trap 'rm -rf "$stage"' EXIT
+          ditto dist/macos/OnRDP.app "$stage/OnRDP.app"
+          ln -s /Applications "$stage/Applications"
+          hdiutil create -volname OnRDP -srcfolder "$stage" -format UDZO "dist/macos/OnRDP-macos-$ARCH.dmg"
+          hdiutil verify "dist/macos/OnRDP-macos-$ARCH.dmg"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-macos-${{ matrix.arch }}
+          path: dist/macos/OnRDP-macos-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+
+  windows:
+    needs: version
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          path-type: inherit
+          update: true
+          install: >-
+            make
+            diffutils
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-pkgconf
+            mingw-w64-ucrt-x86_64-nasm
+            mingw-w64-ucrt-x86_64-freerdp
+      - name: Build bundled application
+        shell: msys2 {0}
+        env:
+          CC: gcc
+          CGO_ENABLED: '1'
+        run: |
+          set -euo pipefail
+          export PATH="$PATH:$(cygpath -u 'C:\Program Files\7-Zip')"
+          export PKG_CONFIG=pkg-config
+          export FREERDP_RUNTIME_DIR="$(cygpath -w /ucrt64/bin)"
+          pkg-config --atleast-version=3.32 freerdp3
+          python scripts/build-windows.py
+      - name: Compile installer
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'onrdp-windows'
+          Expand-Archive -Path dist/windows/onrdp-windows-amd64.zip -DestinationPath $stage
+          $bundle = Join-Path $stage 'onrdp'
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          $out = Join-Path $env:GITHUB_WORKSPACE 'dist\windows'
+          & $iscc "/DReleaseVersion=$env:VERSION" "/DBundleDir=$bundle" "/O$out" scripts/onrdp-windows.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer-windows-amd64
+          path: dist/windows/onrdp-windows-amd64-setup.exe
+          if-no-files-found: error
+
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installer-*
+          merge-multiple: true
+          path: release
+      - name: Publish verified installers
+        working-directory: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          packages=(onrdp-linux-amd64.deb OnRDP-macos-arm64.dmg OnRDP-macos-amd64.dmg onrdp-windows-amd64-setup.exe)
+          sha256sum "${packages[@]}" > SHA256SUMS
+          sha256sum --check SHA256SUMS
+          if existing_sha=$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha 2>/dev/null); then
+            test "$existing_sha" = "$GITHUB_SHA"
+          fi
+          cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
+          - Windows x64 用户可运行 `.exe` 安装程序。
+          - macOS 用户按芯片选择 Apple Silicon（arm64）或 Intel（amd64）的 `.dmg`，打开后将 OnRDP 拖到「应用程序」。应用使用临时签名，尚未经过 Apple 公证。
+          - Ubuntu 24.04 / Linux Mint 22 x64 用户可更新软件源后运行 `sudo apt install ./onrdp-linux-amd64.deb`。
+          - `SHA256SUMS` 包含所有安装包的 SHA-256 校验值。
+          EOF
+          gh release create "$RELEASE_TAG" "${packages[@]}" SHA256SUMS \
+            --target "$GITHUB_SHA" --title "OnRDP $RELEASE_TAG" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" --generate-notes

@@ -15,8 +15,16 @@ func projectFiles(t *testing.T) fstest.MapFS {
 	t.Helper()
 	source := fstest.MapFS{}
 	err := filepath.WalkDir("../..", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.IsDir() {
+		if err != nil {
 			return err
+		}
+		if entry.IsDir() {
+			// Local SDKs and build output are not project source and may
+			// contain dangling platform-library symlinks.
+			if path != "../.." && (strings.HasPrefix(entry.Name(), ".") || entry.Name() == "dist") {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		relative, err := filepath.Rel("../..", path)
 		if err != nil {

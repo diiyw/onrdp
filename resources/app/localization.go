@@ -1,6 +1,8 @@
 package app
 
 import (
+	"runtime"
+
 	"onrdp/internal/i18n"
 	"onrdp/internal/platform"
 )
@@ -21,12 +23,30 @@ func (m *Mod) localize() {
 		}
 		m.node(binding.id).SetAttribute(binding.attribute, m.tr(binding.key))
 	}
+	modifier := "Ctrl+"
+	if runtime.GOOS == "darwin" {
+		modifier = "⌘"
+	}
+	for _, item := range []struct{ id, key, shortcut string }{
+		{"add-host", "添加主机", "N"}, {"search", "搜索主机", "F"}, {"edit-save", "保存", "S"},
+	} {
+		m.node(item.id).SetAttribute("title", m.tr(item.key)+" ("+modifier+item.shortcut+")")
+	}
 	for _, item := range toolbarLabels {
 		m.toolbarLabel(item.id, item.key)
 	}
 	m.node("rdp-toolbar").SetAttribute("aria-label", m.tr("远程工具条"))
 	m.renderToolbar()
+	if m.mirror != nil {
+		m.renderDisplays()
+	}
 	m.hide("rdp-tooltip", true)
+	if m.page == "edit" {
+		if m.draft.Protocol == "android" {
+			m.renderAndroidDevices()
+		}
+		m.renderHostProtocol()
+	}
 	m.listSignature = ""
 	m.dirty = true
 }
@@ -83,17 +103,48 @@ func (m *Mod) setLanguage(code string) {
 // textBindings lists the static text targets. Leaf nodes only: controls and
 // icons keep their structure so their own attributes stay intact.
 var textBindings = []struct{ id, attribute, key string }{
+	{"rustdesk-id-label", "", "RustDesk 设备 ID 或 IP 地址"},
+	{"rustdesk-password-label", "", "RustDesk 密码（可选）"},
+	{"rustdesk-help", "", "IP 直连需在远端启用 RustDesk 的直连功能。"},
+	{"rustdesk-network-title", "", "ID 与中继服务器（可选）"},
+	{"rustdesk-id-server-label", "", "ID 服务器"},
+	{"rustdesk-key-label", "", "服务器公钥"},
+	{"rustdesk-relay-server-label", "", "中继服务器"},
+	{"rustdesk-force-relay-label", "", "始终使用中继"},
+	{"rustdesk-relay-help", "", "中继地址由被控端通告。请在被控端的 RustDesk 网络设置中填写此地址，或导入服务器配置。"},
+	{"android-keys", "aria-label", "安卓按键"},
+	{"screens-title", "", "切换屏幕"},
+	{"android-serial", "", "设备序列号"},
+	{"android-refresh", "", "刷新"},
+	{"android-detected", "", "ADB 设备"},
+	{"android-wireless", "", "无线连接"},
+
+	{"android-wireless-help", "", "使用设备显示的连接端口。首次使用无线调试时，请先用 adb pair 配对。"},
+	{"add-host-label", "", "添加主机"},
+	{"sidebar", "aria-label", "主导航"},
+	{"library-title", "", "连接库"},
+	{"groups-title", "", "分组"},
+	{"favorites-label", "", "已收藏"},
+	{"nav-favorites", "title", "已收藏"},
+	{"nav-favorites", "aria-label", "已收藏"},
+	{"hosts-col-display", "", "连接信息"},
+	{"hosts-col-name", "", "名称"},
+	{"hosts-col-address", "", "主机地址"},
+	{"hosts-col-actions", "", "操作"},
+	{"sessions-col-name", "", "名称"},
+	{"sessions-col-address", "", "主机地址"},
+	{"sessions-col-actions", "", "操作"},
+	{"hosts-col-group", "", "分组"},
+	{"sessions-col-state", "", "状态"},
+	{"nav-hosts", "title", "全部主机"},
+	{"nav-sessions", "title", "会话"},
+	{"nav-settings", "title", "设置"},
 	{"add-host", "aria-label", "添加主机"},
 	{"search", "placeholder", "搜索主机、地址或分组"},
 	{"search", "aria-label", "搜索主机"},
-	{"l10n-1", "", "远程桌面"},
-	{"filter-all", "", "全部主机"},
-	{"filter-favorite", "", "已收藏"},
 	{"host-count", "", "0 台主机"},
 	{"active-count", "", "暂无连接"},
 	{"empty-add", "", "添加主机"},
-	{"l10n-2", "", "会话直接建立在你与主机之间。"},
-	{"l10n-3", "", "凭据保存在本机加密的凭据库中，不会上传到任何服务器。"},
 	{"l10n-4", "", "会话"},
 	{"close-all", "", "全部断开"},
 	{"session-summary", "", "连接过的桌面会显示在这里"},
@@ -101,6 +152,9 @@ var textBindings = []struct{ id, attribute, key string }{
 	{"l10n-6", "", "选择一台主机，打开远程桌面。\n切换页面时，会话会继续保留。"},
 	{"go-hosts", "", "选择主机"},
 	{"l10n-7", "", "设置"},
+	{"appearance-title", "", "外观"},
+	{"theme-light", "", "亮色"},
+	{"theme-dark", "", "暗色"},
 	{"language-title", "", "语言"},
 	{"l10n-8", "", "连接"},
 	{"l10n-10", "", "自动重连"},
@@ -114,13 +168,13 @@ var textBindings = []struct{ id, attribute, key string }{
 	{"l10n-17", "", "安全"},
 	{"l10n-18", "", "凭据保存在本机"},
 	{"background-note", "", "主机密码经 AES-GCM 加密后写入本地凭据库，密钥由操作系统保管。删除主机时同时删除其凭据。"},
-	{"l10n-20", "", "OnRDP · 凭据仅在本机加密保存"},
-	{"l10n-21", "", "主机"},
+	{"l10n-21", "", "全部主机"},
 	{"l10n-22", "", "会话"},
 	{"l10n-23", "", "设置"},
-	{"nav-hosts", "aria-label", "主机"},
+	{"nav-hosts", "aria-label", "全部主机"},
 	{"nav-sessions", "aria-label", "会话"},
 	{"nav-settings", "aria-label", "设置"},
+	{"edit-back", "", "主机"},
 	{"edit-cancel", "", "取消"},
 	{"edit-save", "", "保存"},
 	{"l10n-24", "", "连接信息"},
@@ -143,7 +197,7 @@ var textBindings = []struct{ id, attribute, key string }{
 	{"quality-smooth", "", "流畅"},
 	{"quality-balanced", "", "均衡"},
 	{"quality-high", "", "高清"},
-	{"quality-help", "", "流畅：最高 1280 × 720、16 位色；均衡：最高 1920 × 1080、32 位色；高清：原始分辨率。前两档减少桌面特效，全屏同样受限。保存后重新连接生效。"},
+	{"quality-help", "", "流畅：窗口最高 1280 × 720、16 位色；均衡：窗口最高 1920 × 1080、32 位色；高清：原始分辨率。全屏均适配显示器实际像素，前两档减少桌面特效。保存后重新连接生效。"},
 	{"l10n-35", "", "桌面宽度"},
 	{"l10n-36", "", "桌面高度"},
 	{"l10n-37", "", "剪贴板"},

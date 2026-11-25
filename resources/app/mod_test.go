@@ -25,8 +25,26 @@ import (
 // forwards platform input to the UI module.
 type testScene struct{}
 
-// fixtureWidth and fixtureHeight are the phone-sized viewport the layout tests
-// use, matching the project's adaptive default.
+func TestSessionWindowCentersOncePerConnection(t *testing.T) {
+	var moves int
+	m := &Mod{window: &platform.DesktopWindow{Host: store.Host{ID: "peer"}, Center: func() { moves++ }}}
+	for _, fullscreen := range []bool{false, true, false} {
+		m.fullscreen = fullscreen
+		before := moves
+		m.publishSessionState(rdpclient.StateConnecting)
+		m.publishSessionState(rdpclient.StateConnected)
+		m.publishSessionState(rdpclient.StateConnected)
+		want := before
+		if !fullscreen {
+			want++
+		}
+		if moves != want {
+			t.Fatalf("fullscreen=%t: got %d moves, want %d", fullscreen, moves, want)
+		}
+	}
+}
+
+// Exercise narrow windows as well as the default desktop size.
 const (
 	fixtureWidth  = 420
 	fixtureHeight = 780
@@ -60,7 +78,12 @@ func mountRuntimeWorldSize(t *testing.T, width, height int) (*module.Context, *M
 
 func mountRuntimeWorldSizeWithHost(t *testing.T, width, height int, host *module.Host) (*module.Context, *Mod, *module.Runtime, *ecs.World) {
 	t.Helper()
-	t.Setenv("ONRDP_DATA_DIR", t.TempDir())
+	return mountRuntimeWithVault(t, width, height, host, t.TempDir())
+}
+
+func mountRuntimeWithVault(t *testing.T, width, height int, host *module.Host, dir string) (*module.Context, *Mod, *module.Runtime, *ecs.World) {
+	t.Helper()
+	t.Setenv("ONRDP_DATA_DIR", dir)
 	t.Setenv("ONRDP_LOCALE", "zh-CN")
 
 	source := projectFiles(t)
@@ -175,11 +198,10 @@ func TestRouteHidesOtherPages(t *testing.T) {
 	}
 }
 
-// Desktop windows must have a persistent side navigation instead of the mobile
-// bottom bar, while the remote page still fills the entire content surface.
+// The launcher has a persistent sidebar. A remote session uses the full window.
 func TestDesktopLayoutUsesSideNavigation(t *testing.T) {
 	context, mod := mountFixtureSize(t, 1024, 700)
-	nav, ok := mod.node("bottom-nav").Bounds()
+	nav, ok := mod.node("sidebar").Bounds()
 	if !ok || nav.X != 0 || nav.Y != 0 || nav.Width != 180 || nav.Height != 700 {
 		t.Fatalf("desktop navigation bounds = %+v, ok=%t", nav, ok)
 	}
@@ -194,6 +216,58 @@ func TestDesktopLayoutUsesSideNavigation(t *testing.T) {
 	remote, ok := mod.node("rdp-page").Bounds()
 	if !ok || remote.X != 0 || remote.Width != 1024 || remote.Height != 700 {
 		t.Fatalf("remote desktop bounds = %+v, ok=%t", remote, ok)
+	}
+}
+
+func TestDesktopHostListUsesFullWidthRows(t *testing.T) {
+	context, mod := mountFixtureSize(t, 1024, 700)
+	for _, id := range []string{"one", "two"} {
+		host := store.Host{ID: id, Name: id, Address: "127.0.0.1", Port: 3389, User: "user", Password: "test"}
+		if err := mod.vault.SaveHost(host); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mod.renderLists()
+	if err := context.Content().SyncHTML(); err != nil {
+		t.Fatal(err)
+	}
+	list, ok := mod.node("host-list").Bounds()
+	if !ok {
+		t.Fatal("host list was not laid out")
+	}
+	nextY := list.Y
+	for _, id := range []string{"one", "two"} {
+		row, ok := mod.node("host-" + id).Bounds()
+		if !ok || row.X != list.X || row.Y != nextY || row.Width != list.Width || row.Height <= 0 || row.Height > 56 {
+			t.Fatalf("host %s bounds %+v, expected a compact full-width row at y=%v in %+v", id, row, nextY, list)
+		}
+		nextY += row.Height
+	}
+}
+
+func TestLibraryGroupsTrackHostEdits(t *testing.T) {
+	c, mod := mountFixtureSize(t, 1024, 700)
+	h := store.Host{ID: "office", Name: "Office", Address: "localhost", Port: 3389, User: "user", Password: "test", Group: "Work"}
+	if err := mod.vault.SaveHost(h); err != nil {
+		t.Fatal(err)
+	}
+	mod.click(c, "group:Work")
+	mod.renderLists()
+	mod.edit(c, "")
+	if mod.fields["group"] != "Work" {
+		t.Fatal("new host did not inherit the selected group")
+	}
+	mod.click(c, "edit-cancel")
+	h.Group = "Lab"
+	if err := mod.vault.SaveHost(h); err != nil {
+		t.Fatal(err)
+	}
+	mod.renderLists()
+	if mod.groupFilter != "" {
+		t.Fatalf("removed group is still selected: %q", mod.groupFilter)
+	}
+	if _, ok := mod.root.FindByID("group:Lab"); !ok {
+		t.Fatal("renamed group is absent from the sidebar")
 	}
 }
 
@@ -258,7 +332,11 @@ func TestCardActionsFollowSelectedLanguage(t *testing.T) {
 				t.Fatalf("missing action %s", id)
 			}
 			markup, err := node.Serialize()
-			if err != nil || !strings.Contains(markup, ">"+mod.tr(key)+"</button>") {
+			label := `aria-label="` + mod.tr(key) + `"`
+			if id == "close:office" {
+				label = ">" + mod.tr(key) + "</button>"
+			}
+			if err != nil || !strings.Contains(markup, label) {
 				t.Fatalf("%s: action %s = %q, err=%v", language, id, markup, err)
 			}
 		}
@@ -299,21 +377,28 @@ func TestSaveHostThroughUI(t *testing.T) {
 	}
 }
 
-func TestQualityLimitsFullscreenAndWindowedResolution(t *testing.T) {
+func TestFullscreenUsesNativeResolutionForEveryQuality(t *testing.T) {
 	_, mod := mountFixture(t)
 	host := store.Host{ID: "quality", Name: "Office", Address: "10.0.0.7", Port: 3389, User: "alice", Password: "secret", Width: 2560, Height: 1440, Quality: "smooth"}
 	if err := mod.vault.SaveHost(host); err != nil {
 		t.Fatal(err)
 	}
 	mod.selected = host.ID
-	mod.sessionQuality = rdpclient.QualitySmooth
 	mod.host = &module.Host{Context: &window.Context{Width: 3840, Height: 2160}, ToggleFullscreen: func() {}}
-	for _, fullscreen := range []bool{false, true, false} {
-		mod.fullscreen = fullscreen
-		if w, h := mod.desktopResolution(); w != 1280 || h != 720 {
-			t.Fatalf("fullscreen=%v requested %dx%d", fullscreen, w, h)
+	for _, quality := range []rdpclient.Quality{rdpclient.QualitySmooth, rdpclient.QualityBalanced, rdpclient.QualityHigh} {
+		mod.sessionQuality = quality
+		for _, fullscreen := range []bool{false, true, false} {
+			mod.fullscreen = fullscreen
+			wantWidth, wantHeight := quality.Resolution(host.Width, host.Height)
+			if fullscreen {
+				wantWidth, wantHeight = 3840, 2160
+			}
+			if w, h := mod.desktopResolution(); w != wantWidth || h != wantHeight {
+				t.Fatalf("quality=%s fullscreen=%v requested %dx%d, want %dx%d", quality, fullscreen, w, h, wantWidth, wantHeight)
+			}
 		}
 	}
+	mod.sessionQuality = rdpclient.QualitySmooth
 	// Editing a saved preference takes effect on reconnect, so resize updates
 	// must continue using the active session's profile.
 	host.Quality = "high"
@@ -456,6 +541,7 @@ func TestFullscreenResolutionUsesNativePixelsAndRestoresHostSize(t *testing.T) {
 		t.Fatal(err)
 	}
 	mod.selected = host.ID
+	mod.sessionQuality = rdpclient.QualitySmooth
 	surface := &window.Context{Width: 3456, Height: 2234}
 	mod.host = &module.Host{
 		Context:          surface,
@@ -472,9 +558,49 @@ func TestFullscreenResolutionUsesNativePixelsAndRestoresHostSize(t *testing.T) {
 	if w, h := mod.desktopResolution(); w != 3840 || h != 2160 {
 		t.Fatalf("resolution after surface resize=%dx%d", w, h)
 	}
+	surface.Width, surface.Height = 2160, 3840
+	if w, h := mod.desktopResolution(); w != 2160 || h != 3840 {
+		t.Fatalf("portrait monitor resolution=%dx%d", w, h)
+	}
+	// An unavailable native surface falls back to the viewport, then the host
+	// size, instead of forwarding a zero-sized request during a transition.
+	surface.Width, surface.Height = 0, 0
+	if w, h := mod.desktopResolution(); w != 1728 || h != 1117 {
+		t.Fatalf("fullscreen viewport fallback=%dx%d", w, h)
+	}
+	mod.host.GetViewport = func() (int, int) { return 0, 0 }
+	if w, h := mod.desktopResolution(); w != 1280 || h != 720 {
+		t.Fatalf("fullscreen host fallback=%dx%d", w, h)
+	}
 	mod.toggleFullscreen()
-	if w, h := mod.desktopResolution(); w != host.Width || h != host.Height {
-		t.Fatalf("windowed resolution=%dx%d; expected saved host size", w, h)
+	if w, h := mod.desktopResolution(); w != 1280 || h != 720 {
+		t.Fatalf("windowed resolution=%dx%d; expected saved host size limited by quality", w, h)
+	}
+}
+
+// Routing an existing window must preserve its appearance as well as the
+// preference used by newly launched windows.
+func TestAppearanceSelectionSurvivesNavigation(t *testing.T) {
+	c, mod := mountFixture(t)
+	for _, theme := range []string{"light", "dark", "light"} {
+		mod.click(c, "nav-settings")
+		mod.click(c, "theme-"+theme)
+		mod.click(c, "nav-hosts")
+		root, err := c.Content().HTMLRoot(c.Content().Root())
+		if err != nil {
+			t.Fatal(err)
+		}
+		shell, ok := root.FindByID("shell")
+		if !ok {
+			t.Fatal("shell missing after navigation")
+		}
+		markup, err := shell.Serialize()
+		if err != nil || !strings.Contains(markup, `data-theme="`+theme+`"`) {
+			t.Fatalf("shell did not retain theme %q: %v", theme, err)
+		}
+		if mod.vault.Settings().DarkTheme != (theme == "dark") {
+			t.Fatalf("saved theme differs from %q", theme)
+		}
 	}
 }
 
@@ -912,8 +1038,126 @@ func TestRuntimeMessagesDriveThePage(t *testing.T) {
 	}
 }
 
-// A toggle in the host form must flip the draft flag it stands for, and the
-// toggles must show the values of the record being edited.
+func TestHostAndSessionRowsActivateOnDoubleClick(t *testing.T) {
+	var opened []string
+	var activated []string
+	launcher := &platform.DesktopWindow{OpenSession: func(w *platform.DesktopWindow) {
+		opened = append(opened, w.Host.ID)
+		w.Activate = func() { activated = append(activated, w.ID) }
+	}}
+	host := &module.Host{RequestRender: func() {}}
+	unbind := launcher.Bind(host)
+	defer unbind()
+	context, mod, runtime, world := mountRuntimeWorldSizeWithHost(t, 1024, 700, host)
+	for _, id := range []string{"office", "workshop"} {
+		if err := mod.vault.SaveHost(store.Host{ID: id, Name: id, Address: "localhost", Port: 3389, User: "alice", Password: "test-password"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mod.renderLists()
+	state, _ := world.GetResource[*input.State]()
+	var pointerEvents ecs.MessageReader[scene.InputEvent]
+	var htmlEvents ecs.MessageReader[htmlui.Event]
+	frame := func() {
+		t.Helper()
+		runtime.SyncScopes()
+		for _, system := range []ecs.SystemConfig{
+			ui.UpdateSystem(""), ui.SyncSystem(""), scene.SyncGlobalTransformSystem(""),
+			scene.SyncUIGlobalTransformSystem(""), ui.SyncAfterLayoutSystem(""), scene.DispatchInputEvents2DSystem(""),
+		} {
+			if err := system.Run(world); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for event := range pointerEvents.All(world) {
+			if err := runtime.HandleInput(*event); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for event := range htmlEvents.All(world) {
+			if err := runtime.HandleHTMLEvent(*event); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := runtime.Update(1.0 / 60); err != nil {
+			t.Fatal(err)
+		}
+		state.EndFrame()
+		world.AdvanceMessages()
+	}
+	click := func(id string) {
+		t.Helper()
+		frame()
+		node, _ := mod.root.FindByID(id)
+		bounds, ok := node.Bounds()
+		if !ok {
+			t.Fatalf("%s has no bounds", id)
+		}
+		x, y := float64(bounds.X+bounds.Width/2), float64(bounds.Y+bounds.Height/2)
+		state.PressMouse(input.MouseLeft, x, y)
+		frame()
+		state.ReleaseMouse(input.MouseLeft, x, y)
+		frame()
+		frame()
+	}
+
+	click("connect:office")
+	click("connect:workshop")
+	if len(opened) != 0 {
+		t.Fatalf("single clicks on different rows opened %v", opened)
+	}
+	click("connect:workshop")
+	if len(opened) != 1 || opened[0] != "workshop" {
+		t.Fatalf("double click opened %v, want workshop once", opened)
+	}
+
+	click("favorite:office")
+	record, _ := mod.findHost("office")
+	if !record.Favorite {
+		t.Fatal("single click did not favorite the host")
+	}
+	click("edit:office")
+	if mod.page != "edit" || mod.draft.ID != "office" {
+		t.Fatal("single click did not edit the host")
+	}
+	click("edit-cancel")
+
+	frame()
+	control, ok := context.Content().HTMLControl(context.Content().Root(), "connect:office")
+	if !ok {
+		t.Fatal("could not find the host button")
+	}
+	if !context.Content().Focus(control) {
+		t.Fatal("could not focus the host button")
+	}
+	frame()
+	state.PressKey(input.KeyEnter)
+	frame()
+	frame()
+	if len(opened) != 2 || opened[1] != "office" {
+		t.Fatalf("keyboard activation opened %v, want workshop then office", opened)
+	}
+	state.ReleaseKey(input.KeyEnter)
+	frame()
+
+	mod.openHost("office", true)
+	click("nav-sessions")
+	first, second := mod.sessionWindows[1].ID, mod.sessionWindows[2].ID
+	click("session-window:" + first)
+	click("session-window:" + second)
+	if len(activated) != 0 {
+		t.Fatalf("single clicks on different sessions activated %v", activated)
+	}
+	click("session-window:" + second)
+	if len(activated) != 1 || activated[0] != second || len(opened) != 3 {
+		t.Fatalf("double click activated %v, want only %s (opened hosts %v)", activated, second, opened)
+	}
+	click("close:" + first)
+	if mod.confirm != "close:"+first || len(activated) != 1 {
+		t.Fatalf("disconnect click set confirmation %q and activated %v", mod.confirm, activated)
+	}
+}
+
 func TestHostFormTogglesTrackTheDraft(t *testing.T) {
 	context, mod, runtime := mountRuntime(t)
 	mod.edit(context, "")

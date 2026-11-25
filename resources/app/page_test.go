@@ -65,8 +65,8 @@ func TestRoutedPagesExist(t *testing.T) {
 			t.Fatalf("page %q has no section", page)
 		}
 	}
-	if !ids["bottom-nav"] {
-		t.Fatal("bottom navigation is missing")
+	if !ids["sidebar"] {
+		t.Fatal("sidebar is missing")
 	}
 }
 

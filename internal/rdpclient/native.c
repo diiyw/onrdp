@@ -11,7 +11,9 @@
 #include <freerdp/client/channels.h>
 #include <freerdp/client/cliprdr.h>
 #include <freerdp/client/disp.h>
+#include <freerdp/client/rdpgfx.h>
 #include <freerdp/gdi/gdi.h>
+#include <freerdp/gdi/gfx.h>
 #include <freerdp/input.h>
 #include <freerdp/settings.h>
 #include <freerdp/event.h>
@@ -195,8 +197,32 @@ done:
     LeaveCriticalSection(&ctx->disp_lock);
 }
 
+static UINT gfx_open(RdpgfxClientContext* gfx, BOOL* advertise, BOOL* frame_acks) {
+    (void)frame_acks;
+    onrdp_context* ctx = gfx->custom;
+    rdpGdi* gdi = ctx->base.gdi;
+    /* FreeRDP composites the decoded surfaces into the existing framebuffer
+     * and invokes BeginPaint/EndPaint for the dirty regions. */
+    if (gdi_graphics_pipeline_init(gdi, gfx)) return CHANNEL_RC_OK;
+
+    /* An unsuccessful init may have allocated codecs before reaching the
+     * graphics mutex. Skip capability advertisement and partial teardown. */
+    *advertise = FALSE;
+    freerdp_client_codecs_free(gfx->codecs);
+    gfx->codecs = NULL;
+    gfx->custom = NULL;
+    if (gdi) gdi->gfx = NULL;
+    return ERROR_INTERNAL_ERROR;
+}
+
 static void channel_connected(void* context, const ChannelConnectedEventArgs* event) {
     onrdp_context* ctx = context;
+    if (!strcmp(event->name, RDPGFX_DVC_CHANNEL_NAME)) {
+        RdpgfxClientContext* gfx = event->pInterface;
+        gfx->custom = ctx;
+        gfx->OnOpen = gfx_open;
+        return;
+    }
     if (!strcmp(event->name, DISP_DVC_CHANNEL_NAME)) {
         EnterCriticalSection(&ctx->disp_lock);
         ctx->disp = event->pInterface;
@@ -221,6 +247,12 @@ static void channel_connected(void* context, const ChannelConnectedEventArgs* ev
 }
 static void channel_disconnected(void* context, const ChannelDisconnectedEventArgs* event) {
     onrdp_context* ctx = context;
+    if (!strcmp(event->name, RDPGFX_DVC_CHANNEL_NAME)) {
+        rdpGdi* gdi = ctx->base.gdi;
+        if (gdi && gdi->gfx == event->pInterface)
+            gdi_graphics_pipeline_uninit(gdi, event->pInterface);
+        return;
+    }
     if (!strcmp(event->name, DISP_DVC_CHANNEL_NAME)) {
         EnterCriticalSection(&ctx->disp_lock);
         ctx->disp = NULL;
@@ -261,9 +293,20 @@ static void post_disconnect(freerdp* instance) {
     gdi_free(instance);
 }
 
+static BOOL use_hardware_decode(int color_depth, int enabled) {
+    if (!enabled || color_depth != 32) return FALSE;
+
+    /* Linux packages may load a different FreeRDP build at runtime. */
+    const char* config = freerdp_get_build_config();
+    return strstr(config, " WITH_GFX_H264=ON ") &&
+           (strstr(config, " WITH_APPLE_VIDEOTOOLBOX=ON ") ||
+            strstr(config, " WITH_FFMPEG_HWACCEL=ON "));
+}
+
 onrdp_context* onrdp_new(uintptr_t handle, const char* host, int port,
     const char* user, const char* password, const char* domain,
-    int width, int height, int clipboard, int console, int color_depth, int reduced_effects) {
+    int width, int height, int clipboard, int console, int color_depth, int reduced_effects,
+    int hardware_decode) {
     freerdp* instance = freerdp_new();
     if (!instance) return NULL;
     instance->ContextSize = sizeof(onrdp_context);
@@ -280,6 +323,7 @@ onrdp_context* onrdp_new(uintptr_t handle, const char* host, int port,
     instance->PostConnect = post_connect;
     instance->PostDisconnect = post_disconnect;
     rdpSettings* s = ctx->base.settings;
+    const BOOL gfx = use_hardware_decode(color_depth, hardware_decode);
 #define SET(kind, name, value) if (!freerdp_settings_set_##kind(s, FreeRDP_##name, value)) goto fail
     SET(string, ServerHostname, host);
     SET(uint32, ServerPort, port);
@@ -300,7 +344,17 @@ onrdp_context* onrdp_new(uintptr_t handle, const char* host, int port,
     SET(bool, AllowFontSmoothing, color_depth == 32);
     SET(uint32, TcpConnectTimeout, 10000);
     SET(bool, IgnoreCertificate, TRUE); /* Same certificate policy as the former backend. */
-    SET(bool, SupportGraphicsPipeline, FALSE);
+    SET(bool, SupportGraphicsPipeline, gfx);
+    if (gfx) {
+        SET(bool, GfxH264, TRUE);
+        SET(bool, GfxAVC444, TRUE);
+        SET(bool, GfxAVC444v2, TRUE);
+        SET(bool, FastPathOutput, TRUE);
+        SET(bool, FrameMarkerCommandEnabled, TRUE);
+        /* FreeRDP reads this flag when requesting hardware decoding. The
+         * framebuffer is still backed by gdi_init and delivered to Onix. */
+        SET(bool, SoftwareGdi, FALSE);
+    }
     SET(bool, SupportDisplayControl, TRUE);
     SET(bool, DynamicResolutionUpdate, TRUE);
     SET(bool, RedirectClipboard, clipboard);

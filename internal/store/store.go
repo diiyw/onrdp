@@ -17,12 +17,23 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"onrdp/internal/i18n"
+	"onrdp/internal/rustdesk"
+	"onrdp/internal/scrcpy"
 )
 
-// Host is one saved desktop. Credentials live in the same encrypted blob as the
+const (
+	Android  = "android"
+	RustDesk = "rustdesk"
+)
+
+// Host is one saved device. Credentials live in the same encrypted blob as the
 // rest of the record, never in a separate plaintext field.
 type Host struct {
 	ID          string `json:"id"`
+	Protocol    string `json:"protocol,omitempty"` // Empty for existing RDP records.
+	Wireless    bool   `json:"wireless,omitempty"` // Address is an ADB TCP endpoint instead of a serial.
 	Name        string `json:"name"`
 	Address     string `json:"address"`
 	User        string `json:"user"`
@@ -38,6 +49,8 @@ type Host struct {
 	ConsoleMode bool   `json:"consoleMode"`
 	// DynamicSize is retained for compatibility; windows only scale locally.
 	DynamicSize bool `json:"dynamicSize"`
+
+	RustDeskNetwork rustdesk.Network `json:"rustdeskNetwork,omitzero"`
 }
 
 // NewID returns a random identifier for a freshly created host.
@@ -63,6 +76,23 @@ func (h Host) Resolution() (int, int) {
 
 // Validate reports the first field that cannot produce a connection.
 func (h Host) Validate() error {
+	switch h.Protocol {
+	case RustDesk:
+		if strings.TrimSpace(h.Name) == "" {
+			return i18n.NewError("请填写主机名称")
+		}
+		_, err := h.RustDeskNetwork.Target(h.Address)
+		return err
+	case Android:
+		if strings.TrimSpace(h.Name) == "" || h.Address == "" || strings.ContainsAny(h.Address, " \t\r\n\x00") {
+			return ErrAndroidAddress
+		}
+		if h.Wireless {
+			_, err := scrcpy.Endpoint(h.Address)
+			return err
+		}
+		return nil
+	}
 	if strings.TrimSpace(h.Name) == "" || strings.TrimSpace(h.Address) == "" || strings.TrimSpace(h.User) == "" {
 		return ErrFieldMissing
 	}
@@ -79,6 +109,7 @@ func (h Host) Validate() error {
 }
 
 var (
+	ErrAndroidAddress  = i18n.NewError("请填写名称和 ADB 地址或设备序列号")
 	ErrFieldMissing    = errors.New("请填写名称、地址和用户名")
 	ErrPortRange       = errors.New("端口必须介于 1 和 65535 之间")
 	ErrFieldFormat     = errors.New("地址或用户名格式不正确")
@@ -89,6 +120,7 @@ var (
 
 // Settings are app-wide preferences, kept in the same vault as the hosts.
 type Settings struct {
+	DarkTheme bool   `json:"darkTheme,omitempty"`
 	Language  string `json:"language,omitempty"`
 	Reconnect bool   `json:"reconnect"`
 	Clipboard bool   `json:"clipboard"`
@@ -171,8 +203,13 @@ func (v *Vault) Settings() Settings {
 func (v *Vault) SaveSettings(settings Settings) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	previous := v.data.Settings
 	v.data.Settings = settings
-	return v.writeLocked()
+	if err := v.writeLocked(); err != nil {
+		v.data.Settings = previous
+		return err
+	}
+	return nil
 }
 
 // SaveHost inserts or replaces one record, keyed by ID.

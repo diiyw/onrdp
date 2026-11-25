@@ -1,7 +1,17 @@
-//go:build android || ios
+//go:build android || ios || onix_drm
 
 package main
 
-import "github.com/onix-engine/onix"
+import (
+	"io/fs"
 
-func startDesktop(*onix.App) error { return nil }
+	"github.com/onix-engine/onix/project"
+)
+
+func runProject(plan project.ProjectPlan, source fs.FS) error {
+	app, err := newProjectWindow(plan, source, nil)
+	if err != nil {
+		return err
+	}
+	return app.Run()
+}

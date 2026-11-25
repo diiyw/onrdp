@@ -9,13 +9,18 @@
     "input": {
       "pointer": true,
       "keyboard": true,
-      "text": true
+      "text": true,
+      "files": true
     }
   },
   "resources": {
     "page": {
       "kind": "html",
       "path": "app.html"
+    },
+    "device-mobile": {
+      "kind": "image",
+      "path": "icons/device-mobile.svg"
     },
     "toolbar-expand": {
       "kind": "image",

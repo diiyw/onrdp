@@ -22,6 +22,14 @@ var toolbarLabels = []struct{ id, key string }{
 	{"rdp-drag", "移动工具条"},
 	{"rdp-toolbar-toggle", "收起工具条"},
 	{"rdp-back", "返回会话"},
+	{"android-back", "返回"},
+	{"android-key:home", "主屏幕"},
+	{"android-key:recents", "最近任务"},
+	{"android-key:volume-down", "音量减"},
+	{"android-key:volume-up", "音量加"},
+	{"android-key:power", "电源"},
+	{"screens-refresh", "刷新"},
+	{"screens-toggle", "切换屏幕"},
 	{"rdp-info-toggle", "连接信息"},
 	{"rdp-fullscreen", "全屏"},
 	{"rdp-reconnect", "重连"},
@@ -57,7 +65,18 @@ func (m *Mod) renderToolbar() {
 	m.node("rdp-toolbar-toggle").SetAttribute("aria-expanded", strconv.FormatBool(!m.toolbar.collapsed))
 	m.node("rdp-toolbar-toggle-icon").SetAttribute("src", "icons/toolbar-"+icon+".svg")
 	m.hide("rdp-tools", m.toolbar.collapsed)
-	m.hide("l10n-43", m.toolbar.collapsed || !m.toolbar.keys)
+	showScreens := m.mirror != nil && m.mirror.picker && !m.toolbar.collapsed
+	m.hide("android-back", m.mirror == nil)
+	m.hide("screens-toggle", m.mirror == nil)
+	m.hide("screens-panel", !showScreens)
+	m.node("screens-toggle").SetAttribute("aria-expanded", strconv.FormatBool(showScreens))
+	showKeys := !m.toolbar.collapsed && m.toolbar.keys
+	m.hide("l10n-43", !showKeys || m.mirror != nil)
+	m.hide("android-keys", !showKeys || m.mirror == nil)
+	if m.mirror != nil {
+		m.toolbarLabel("rdp-keys-toggle", "安卓按键")
+		m.node("rdp-keys-toggle").SetAttribute("aria-controls", "android-keys")
+	}
 	m.hide("rdp-info", m.toolbar.collapsed || !m.toolbar.info)
 	m.node("rdp-keys-toggle").SetAttribute("aria-pressed", strconv.FormatBool(m.toolbar.keys))
 	m.node("rdp-info-toggle").SetAttribute("aria-pressed", strconv.FormatBool(m.toolbar.info))
@@ -175,6 +194,8 @@ func (m *Mod) toolbarTooltip(x, y float32) {
 			label = "展开工具条"
 		} else if item.id == "rdp-fullscreen" && m.fullscreen {
 			label = "窗口模式"
+		} else if item.id == "rdp-keys-toggle" && m.mirror != nil {
+			label = "安卓按键"
 		}
 		page, _ := m.node("rdp-page").Bounds()
 		bar, _ := m.node("rdp-toolbar").Bounds()

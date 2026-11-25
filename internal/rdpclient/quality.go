@@ -20,7 +20,7 @@ func (q Quality) Normalized() Quality {
 }
 
 // Resolution fits within a landscape or portrait limit without upscaling or
-// changing the aspect ratio. It also applies to native-pixel fullscreen sizes.
+// changing the aspect ratio. Fullscreen uses native pixels instead of this cap.
 func (q Quality) Resolution(width, height int) (int, int) {
 	var long, short int
 	switch q.Normalized() {

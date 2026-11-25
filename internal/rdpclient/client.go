@@ -146,7 +146,6 @@ func (c *Client) Connect(cfg Config) {
 	c.dirty = c.dirty[:0]
 	c.full = true
 	s := newNativeSession(c)
-	s.quality = cfg.Quality.Normalized()
 	c.rdp = s
 	c.mu.Unlock()
 	go s.run(cfg)
@@ -486,6 +485,8 @@ func (c *Client) SetClipboard(text string) {
 // ResizeDesktop requests real remote pixels through the display-control
 // channel. Servers without that channel retain their negotiated resolution.
 // Requests made while connecting are retained until the channel is ready.
+// Sizes are explicit pixel targets; quality limits are applied by the caller
+// for windowed mode so fullscreen can use the monitor's native resolution.
 func (c *Client) ResizeDesktop(width, height int) {
 	if width <= 0 || height <= 0 {
 		return

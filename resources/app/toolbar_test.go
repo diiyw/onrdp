@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -53,6 +54,42 @@ func TestFloatingToolbarKeepsDesktopFullSize(t *testing.T) {
 					if button.X < bar.X || button.Y < bar.Y || button.X+button.Width > bar.X+bar.Width || button.Y+button.Height > bar.Y+bar.Height {
 						t.Fatalf("%s: button %s escaped toolbar: %+v in %+v", action, item.id, button, bar)
 					}
+				}
+			}
+		})
+	}
+}
+
+func TestAndroidToolbarFitsVisibleButtons(t *testing.T) {
+	for _, width := range []int{320, 390, 900} {
+		t.Run(fmt.Sprint(width), func(t *testing.T) {
+			context, mod := mountFixtureSize(t, width, 700)
+			mod.route("rdp")
+			mod.hide("rdp-back", true)
+			mod.mirror = &androidMirror{}
+			mod.status.State = rdpclient.StateConnected
+			mod.text("rdp-title", strings.Repeat("Android ", 30))
+			if _, ok := mod.root.FindByID("android-exit-app"); ok {
+				t.Fatal("toolbar still contains the exit app button")
+			}
+			for _, state := range []struct{ keys, info, collapsed bool }{
+				{}, {keys: true}, {info: true}, {collapsed: true}, {},
+			} {
+				mod.toolbar.keys, mod.toolbar.info, mod.toolbar.collapsed = state.keys, state.info, state.collapsed
+				mod.renderToolbar()
+				if err := context.Content().SyncHTML(); err != nil {
+					t.Fatal(err)
+				}
+				first, _ := mod.node("rdp-drag").Bounds()
+				last, _ := mod.node("rdp-close").Bounds()
+				if state.collapsed {
+					last, _ = mod.node("rdp-toolbar-toggle").Bounds()
+				}
+				bar, _ := mod.node("rdp-toolbar").Bounds()
+				leftInset := first.X - bar.X
+				rightInset := (bar.X + bar.Width) - (last.X + last.Width)
+				if bar.X+bar.Width > float32(width) || last.Y != first.Y || math.Abs(float64(rightInset-leftInset)) > 0.01 {
+					t.Fatalf("%+v: toolbar does not fit its buttons: first %+v, last %+v, bar %+v", state, first, last, bar)
 				}
 			}
 		})
