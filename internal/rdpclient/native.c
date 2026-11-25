@@ -5,6 +5,12 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdatomic.h>
+
+/* WinPR falls back to MinGW's native TLS when C11 threads are unavailable. */
+#if defined(__MINGW32__) && !defined(__STDC_NO_THREADS__) && !__has_include(<threads.h>)
+#define __STDC_NO_THREADS__ 1
+#endif
+
 #include <freerdp/freerdp.h>
 #include <freerdp/client.h>
 #include <freerdp/client/cmdline.h>

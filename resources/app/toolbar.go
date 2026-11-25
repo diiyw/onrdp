@@ -117,7 +117,9 @@ func (m *Mod) positionToolbar(x, y float32) {
 	}
 	m.toolbar.x, m.toolbar.y = x, y
 	m.toolbar.positioned = true
-	m.node("rdp-toolbar").SetAttribute("style", fmt.Sprintf("left:%.2fpx;top:%.2fpx", x, y))
+	left := strconv.FormatFloat(float64(x), 'f', -1, 32)
+	top := strconv.FormatFloat(float64(y), 'f', -1, 32)
+	m.node("rdp-toolbar").SetAttribute("style", "left:"+left+"px;top:"+top+"px")
 }
 
 func containsPoint(rect module.Rect, x, y float32) bool {
