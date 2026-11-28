@@ -145,11 +145,13 @@ button.record-main{padding:0;min-height:32px;background:transparent;border:0}
 .quality-option+.quality-option{margin-left:-1px}
 .quality-option:first-child{border-radius:4px 0 0 4px}
 .quality-option:last-child{border-radius:0 4px 4px 0}
+#quality-presets:not([data-protocol="rustdesk"]) #quality-high{border-radius:0 4px 4px 0}
 .quality-option.selected{background:#dfe7fb;color:#243f91;border-color:#849aca}
 .quality-option:not(.selected):hover{background:#ecedf0}
 .form-section{margin-bottom:22px}
 .form-section > div{margin-bottom:12px}
 .form-section > div:last-child{margin-bottom:0}
+#rdp-options .form-row{margin-bottom:12px}
 .form-section label{display:block;font-size:12px;color:#464a56;margin-bottom:5px}
 .form-section input{display:block;width:100%;min-width:0;height:29px;border:1px solid #a8abb3;border-radius:3px;background:#ffffff;color:#202126;padding:0 8px}
 .form-row{display:flex;gap:10px}
@@ -390,7 +392,8 @@ button.record-main{padding:0;min-height:32px;background:transparent;border:0}
  <div class="form-section"><div class="quality-options"><button id="android-serial" class="quality-option">设备序列号</button><button id="android-wireless" class="quality-option">无线连接</button></div>
  <div><label for="field-adb" id="android-address-label">设备序列号</label><input id="field-adb" autocomplete="off" spellcheck="false"></div></div>
  <p id="android-wireless-help" class="form-help">使用设备显示的连接端口。首次使用无线调试时，请先用 adb pair 配对。</p></div>
- <div id="rustdesk-network" class="form-column" hidden>
+ <div id="desktop-options" class="form-column">
+ <div id="rustdesk-network" hidden>
  <div class="group-title" id="rustdesk-network-title">ID 与中继服务器（可选）</div><div class="form-section">
  <div><label for="field-rustdesk-id-server" id="rustdesk-id-server-label">ID 服务器</label><input id="field-rustdesk-id-server" placeholder="hbbs.example.com:21116" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
  <div><label for="field-rustdesk-key" id="rustdesk-key-label">服务器公钥</label><input id="field-rustdesk-key" placeholder="id_ed25519.pub" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
@@ -399,14 +402,18 @@ button.record-main{padding:0;min-height:32px;background:transparent;border:0}
  <div><button id="rustdesk-copy-config">复制被控端配置</button></div>
  <button id="rustdesk-force-relay" class="toggle" role="checkbox" aria-checked="false"><span class="check-box" aria-hidden="true"><span>✓</span></span><span id="rustdesk-force-relay-label">始终使用中继</span></button>
  </div></div>
- <div id="rdp-options" class="form-column">
  <div class="group-title" id="l10n-34">显示与共享</div><div class="form-section">
- <div><label id="quality-label">画面质量</label><div class="quality-options" role="group" aria-labelledby="quality-label"><button id="quality-smooth" class="quality-option" aria-pressed="false">流畅</button><button id="quality-balanced" class="quality-option" aria-pressed="false">均衡</button><button id="quality-high" class="quality-option selected" aria-pressed="true">高清</button></div><p id="quality-help" class="quality-help">流畅：窗口最高 1280 × 720、16 位色；均衡：窗口最高 1920 × 1080、32 位色；高清：原始分辨率。全屏均适配显示器实际像素，前两档减少桌面特效。保存后重新连接生效。</p></div>
+ <div><label id="quality-label">画面质量</label><div id="quality-presets" class="quality-options" role="group" aria-labelledby="quality-label"><button id="quality-smooth" class="quality-option" aria-pressed="false">流畅</button><button id="quality-balanced" class="quality-option" aria-pressed="false">均衡</button><button id="quality-high" class="quality-option selected" aria-pressed="true">高清</button><button id="quality-custom" class="quality-option" aria-pressed="false" hidden>自定义</button></div><p id="quality-help" class="quality-help">流畅：窗口最高 1280 × 720、16 位色；均衡：窗口最高 1920 × 1080、32 位色；高清：原始分辨率。全屏均适配显示器实际像素，前两档减少桌面特效。保存后重新连接生效。</p><p id="rustdesk-quality-help" class="quality-help" hidden>保存后开启新会话生效。RustDesk 公共中继会限制自定义画质和帧率。</p></div>
+ <div id="rustdesk-custom-quality" class="form-row" hidden>
+ <div class="wide"><label for="field-rustdesk-image-quality" id="rustdesk-image-quality-label">码率比例（10–2000%）</label><input id="field-rustdesk-image-quality" type="number" min="10" max="2000" step="1" value="50" inputmode="numeric"></div>
+ <div class="wide"><label for="field-rustdesk-fps" id="rustdesk-fps-label">目标帧率（5–120 FPS）</label><input id="field-rustdesk-fps" type="number" min="5" max="120" step="1" value="30" inputmode="numeric"></div>
+ </div>
+ <div id="rdp-options">
  <div class="form-row"><div class="wide"><label for="field-width" id="l10n-35">桌面宽度</label><input id="field-width" type="number" value="1600" inputmode="numeric"></div><div class="wide"><label for="field-height" id="l10n-36">桌面高度</label><input id="field-height" type="number" value="900" inputmode="numeric"></div></div>
  <div class="form-checks"><button id="field-clipboard" class="toggle" role="checkbox" aria-label="剪贴板重定向" aria-checked="true"><span class="check-box" aria-hidden="true"><span>✓</span></span><span id="l10n-37">剪贴板</span></button>
  <button id="field-console" class="toggle" role="checkbox" aria-label="连接控制台会话" aria-checked="false"><span class="check-box" aria-hidden="true"><span>✓</span></span><span id="l10n-45">控制台会话</span></button></div>
- </div>
- <p class="form-help" id="l10n-38">连接使用 TLS 与网络级身份验证（NLA）。密码仅在本机加密保存。</p></div>
+ <p class="form-help" id="l10n-38">连接使用 TLS 与网络级身份验证（NLA）。密码仅在本机加密保存。</p>
+ </div></div></div>
  </div></div>
  <footer class="editor-actions"><button id="edit-delete" class="danger" hidden>删除主机</button><button id="edit-cancel">取消</button><button id="edit-save" class="primary">保存</button></footer>
 </section>
@@ -414,6 +421,7 @@ button.record-main{padding:0;min-height:32px;background:transparent;border:0}
  <div id="rdp-stage" class="rdp-stage">
   <img id="rdp-frame" class="rdp-frame" src="rdp-frame" alt="">
   <textarea id="rdp-input" class="rdp-input" aria-label="远程桌面输入" autocomplete="off" autocapitalize="none" spellcheck="false"></textarea>
+  <button id="rdp-keyboard" class="rdp-input" type="button" tabindex="-1" aria-label="远程桌面输入" hidden></button>
   <div id="rdp-overlay" class="rdp-overlay"><span id="rdp-overlay-text">正在连接…</span><p id="rdp-error" class="rdp-error" hidden></p><button id="rdp-overlay-retry" class="primary" hidden>重新连接</button></div>
  </div>
  <div id="rdp-toolbar" class="rdp-toolbar" role="toolbar" aria-label="远程工具条">

@@ -23,6 +23,7 @@ import (
 type Client struct {
 	wake      func()
 	network   Network
+	quality   VideoQuality
 	mu        sync.Mutex
 	active    *session
 	previous  <-chan struct{}
@@ -45,6 +46,9 @@ type session struct {
 	pixels           []byte
 	fresh            bool
 	width, height    int
+	mappedKeyboard   bool
+	keyboardLocks    int32
+	heldModifiers    uint8
 }
 
 type wireEvent struct {
@@ -72,7 +76,9 @@ type displayGeometry struct {
 // a peer. Each OnRDP window owns its transport until it finishes closing.
 var activePeers sync.Map
 
-func New(wake func(), network Network) *Client { return &Client{wake: wake, network: network} }
+func New(wake func(), network Network, quality VideoQuality) *Client {
+	return &Client{wake: wake, network: network, quality: quality.Normalized()}
+}
 
 func (c *Client) Connect(config rdpclient.Config) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -146,14 +152,24 @@ func (c *Client) run(s *session, config rdpclient.Config) error {
 		defer cancel()
 		_, _ = call(ctx, func(port int64) { core.close(port, core.bytes(s.id[:])) })
 	}()
-	for _, name := range []string{"disable-clipboard", "disable-audio"} {
-		disabled := false
-		core.syncValue(core.getToggle(core.bytes(s.id[:]), core.str(name)), func(o *dartObject) { disabled = o.boolean() })
-		if !disabled {
-			if _, err := s.call(func(port int64) { core.toggle(port, core.bytes(s.id[:]), core.str(name)) }); err != nil {
+	for _, option := range []struct {
+		name  string
+		value bool
+	}{
+		{"disable-clipboard", !config.Clipboard},
+		{"enable-file-copy-paste", false},
+		{"disable-audio", true},
+	} {
+		current := false
+		core.syncValue(core.getToggle(core.bytes(s.id[:]), core.str(option.name)), func(o *dartObject) { current = o.boolean() })
+		if current != option.value {
+			if _, err := s.call(func(port int64) { core.toggle(port, core.bytes(s.id[:]), core.str(option.name)) }); err != nil {
 				return err
 			}
 		}
+	}
+	if err := s.applyQuality(core, c.quality); err != nil {
+		return err
 	}
 	port, unregister := registerPort(s.receive)
 	defer unregister()
@@ -163,6 +179,7 @@ func (c *Client) run(s *session, config rdpclient.Config) error {
 	startupTimeout := deadline.C
 	var displays []displayGeometry
 	currentDisplay := 0
+	keyboardConfigured := false
 	for {
 		select {
 		case <-s.ctx.Done():
@@ -195,6 +212,12 @@ func (c *Client) run(s *session, config rdpclient.Config) error {
 				}
 				switch msg.Name {
 				case "peer_info", "sync_peer_info":
+					if !keyboardConfigured {
+						if err := s.configureKeyboard(core); err != nil {
+							return err
+						}
+						keyboardConfigured = true
+					}
 					if msg.CurrentDisplay != "" {
 						currentDisplay, _ = strconv.Atoi(msg.CurrentDisplay)
 					}
@@ -229,12 +252,36 @@ func (c *Client) run(s *session, config rdpclient.Config) error {
 				}
 			}
 			for _, input := range inputs {
-				if _, err := s.call(func(port int64) { input(core, port, core.bytes(s.id[:])) }); err != nil {
+				if _, err := s.call(func(port int64) { input(core, s, port, core.bytes(s.id[:])) }); err != nil {
 					return err
 				}
 			}
 		}
 	}
+}
+
+// Set the options before session startup so RustDesk includes them at login.
+// The custom quality setter also selects custom mode.
+func (s *session) applyQuality(core *core, quality VideoQuality) error {
+	mode := quality.Mode
+	switch mode {
+	case QualityCustom:
+		if _, err := s.call(func(port int64) {
+			core.setCustomQuality(port, core.bytes(s.id[:]), int32(quality.ImageQuality))
+		}); err != nil {
+			return err
+		}
+		_, err := s.call(func(port int64) {
+			core.setCustomFPS(port, core.bytes(s.id[:]), int32(quality.FPS))
+		})
+		return err
+	case "smooth":
+		mode = "low"
+	case "high":
+		mode = "best"
+	}
+	_, err := s.call(func(port int64) { core.setQuality(port, core.bytes(s.id[:]), core.str(mode)) })
+	return err
 }
 
 func (s *session) call(fn func(int64)) (string, error) {
@@ -368,6 +415,7 @@ func (c *Client) Close() {
 	c.mu.Unlock()
 }
 
+// The core reads and writes the system clipboard directly on desktop.
 func (c *Client) TakeClipboard() (string, bool) { return "", false }
 func (c *Client) SetClipboard(string)           {}
 func (c *Client) ResizeDesktop(int, int)        {}

@@ -15,6 +15,35 @@ import (
 	"onrdp/internal/store"
 )
 
+type clipboardConfigClient struct {
+	remoteClient
+	config rdpclient.Config
+}
+
+func (c *clipboardConfigClient) Connect(config rdpclient.Config) { c.config = config }
+
+func TestRustDeskUsesGlobalClipboardSetting(t *testing.T) {
+	_, m, _, _ := mountRuntimeWithVault(t, 1024, 700, &module.Host{}, t.TempDir())
+	client := &clipboardConfigClient{remoteClient: m.client}
+	m.client = client
+	// Existing RustDesk hosts were saved without a per-host clipboard setting.
+	host := store.Host{Protocol: store.RustDesk, Address: "Office_PC-01"}
+	m.connect(host)
+	if !client.config.Clipboard {
+		t.Fatal("existing RustDesk host did not inherit the enabled clipboard setting")
+	}
+
+	settings := m.vault.Settings()
+	settings.Clipboard = false
+	if err := m.vault.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	m.connect(host)
+	if client.config.Clipboard {
+		t.Fatal("RustDesk clipboard remained enabled after turning off the global setting")
+	}
+}
+
 func TestRustDeskHostAndSession(t *testing.T) {
 	target := os.Getenv("ONRDP_RUSTDESK_TEST_PEER")
 	connectedTest := target != "" && os.Getenv("ONRDP_RUSTDESK_LIB") != ""
@@ -46,6 +75,7 @@ func TestRustDeskHostAndSession(t *testing.T) {
 	vault := t.TempDir()
 	c, m, _, _ := mountRuntimeWithVault(t, 1024, 700, host, vault)
 	m.click(c, "add-host")
+	m.click(c, "quality-smooth")
 	m.click(c, "protocol-rustdesk")
 	if _, hidden := attribute(c, "rdp-credentials", "hidden"); !hidden {
 		t.Fatal("RDP fields are visible for a RustDesk host")
@@ -53,6 +83,24 @@ func TestRustDeskHostAndSession(t *testing.T) {
 	if _, hidden := attribute(c, "rustdesk-fields", "hidden"); hidden {
 		t.Fatal("RustDesk fields are hidden")
 	}
+	if pressed, _ := attribute(c, "quality-balanced", "aria-pressed"); pressed != "true" {
+		t.Fatal("RustDesk did not start with the balanced preset")
+	}
+	if _, hidden := attribute(c, "rustdesk-custom-quality", "hidden"); !hidden {
+		t.Fatal("custom settings are visible for a RustDesk preset")
+	}
+	m.click(c, "quality-custom")
+	if _, hidden := attribute(c, "rustdesk-custom-quality", "hidden"); hidden {
+		t.Fatal("RustDesk custom quality fields are hidden")
+	}
+	m.click(c, "protocol-rdp")
+	if pressed, _ := attribute(c, "quality-smooth", "aria-pressed"); pressed != "true" {
+		t.Fatal("switching protocol did not restore the RDP preset")
+	}
+	if _, hidden := attribute(c, "quality-custom", "hidden"); !hidden {
+		t.Fatal("RustDesk custom quality is visible for RDP")
+	}
+	m.click(c, "protocol-rustdesk")
 	if err := c.Content().SyncHTML(); err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +127,13 @@ func TestRustDeskHostAndSession(t *testing.T) {
 			t.Fatal("unexpected server configuration for the remote peer")
 		}
 	}
+	m.input("field-rustdesk-image-quality", "70")
+	m.input("field-rustdesk-fps", "121")
+	m.click(c, "edit-save")
+	if m.page != "edit" || len(m.vault.Snapshot().Hosts) != 0 {
+		t.Fatal("out-of-range RustDesk frame rate was saved")
+	}
+	m.input("field-rustdesk-fps", "25")
 	m.click(c, "edit-save")
 	records := m.vault.Snapshot().Hosts
 	if len(records) != 1 {
@@ -88,13 +143,21 @@ func TestRustDeskHostAndSession(t *testing.T) {
 	if record.Protocol != store.RustDesk || record.Address != target || record.Password != password || record.Port != 0 || record.RustDeskNetwork != network {
 		t.Fatal("saved RustDesk host has unexpected connection settings")
 	}
+	quality := rustdesk.VideoQuality{Mode: rustdesk.QualityCustom, ImageQuality: 70, FPS: 25}
+	if record.RustDeskQuality != quality {
+		t.Fatalf("saved RustDesk quality = %+v, want %+v", record.RustDeskQuality, quality)
+	}
 	m.click(c, "edit:"+record.ID)
 	if m.rustDeskNetwork() != network {
 		t.Fatal("reopened editor did not restore the server settings")
 	}
+	if pressed, _ := attribute(c, "quality-custom", "aria-pressed"); pressed != "true" ||
+		m.fields["rustdesk-image-quality"] != "70" || m.fields["rustdesk-fps"] != "25" {
+		t.Fatal("reopened editor did not restore the custom RustDesk quality")
+	}
 	m.click(c, "edit-cancel")
 	m.click(c, "connect:"+record.ID)
-	if session == nil || session.Host.Protocol != store.RustDesk || session.Host.Password != "" {
+	if session == nil || session.Host.Protocol != store.RustDesk || session.Host.Password != "" || session.Host.RustDeskQuality != quality {
 		t.Fatal("RustDesk did not request an embedded session window")
 	}
 	wake := make(chan struct{}, 1)

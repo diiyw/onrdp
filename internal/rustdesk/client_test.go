@@ -24,7 +24,7 @@ func TestNativeRustDeskDirectConnection(t *testing.T) {
 	if err := listener.SetDeadline(time.Now().Add(12 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	client := New(nil, Network{})
+	client := New(nil, Network{}, VideoQuality{})
 	defer client.Close()
 	client.Connect(rdpclient.Config{Host: listener.Addr().String()})
 	conn, err := listener.Accept()
@@ -45,7 +45,7 @@ func TestNativeRustDeskFramebuffer(t *testing.T) {
 		case wake <- struct{}{}:
 		default:
 		}
-	}, Network{})
+	}, Network{}, VideoQuality{})
 	defer client.Close()
 	client.Connect(rdpclient.Config{Host: target, Password: os.Getenv("ONRDP_RUSTDESK_TEST_PASSWORD")})
 	timeout := time.After(20 * time.Second)
@@ -67,14 +67,22 @@ func TestNativeRustDeskFramebuffer(t *testing.T) {
 				client.KeyDown(rdpclient.Key{Scancode: 0x18})
 				client.KeyUp(rdpclient.Key{Scancode: 0x18})
 				client.SendText("nrdp")
+				leftShift := rdpclient.Key{Scancode: 0x2a}
+				client.KeyDown(leftShift)
+				client.MouseButton(0, true, 150, 100)
+				client.MouseButton(0, false, 150, 100)
+				client.SendSequence([]rdpclient.Key{{Scancode: 0x03}})
+				client.KeyUp(leftShift)
+				client.SendSequence([]rdpclient.Key{{Scancode: 0x36}, {Scancode: 0x03}})
 				client.SendSequence([]rdpclient.Key{{Scancode: 0x1c}})
 				for range 100 {
-					if data, _ := os.ReadFile(path); string(data) == "onrdp" {
+					if data, _ := os.ReadFile(path); string(data) == "onrdp@@" {
 						return
 					}
 					time.Sleep(50 * time.Millisecond)
 				}
-				t.Fatal("the peer did not receive the expected keyboard input")
+				data, _ := os.ReadFile(path)
+				t.Fatalf("the peer received keyboard input %q, want onrdp@@", data)
 			}
 			return
 		}

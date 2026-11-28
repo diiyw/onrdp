@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"github.com/onix-engine/onix/input"
 	"github.com/onix-engine/onix/module"
 
 	"onrdp/internal/rdpclient"
@@ -12,6 +13,7 @@ type DesktopWindow struct {
 	ID           string
 	Host         store.Host // Session metadata, with the password cleared.
 	State        rdpclient.State
+	Keyboard     SessionKeyboard
 	Decoder      string
 	Err          error
 	OpenSession  func(*DesktopWindow)
@@ -23,6 +25,17 @@ type DesktopWindow struct {
 	PendingTheme *bool
 	Closing      bool
 	native       *module.Host
+}
+
+// SessionKeyboard ties native keyboard capture to the remote image.
+// All callbacks run on the window thread.
+type SessionKeyboard struct {
+	Active    func() bool
+	Blur      func()
+	Ready     func() bool
+	Key       func(input.KeyCode, bool)
+	Release   func()
+	OverFrame func(x, y float32) bool
 }
 
 // The generated registry constructs each module. Bind its window by host while
@@ -56,6 +69,7 @@ func (w *DesktopWindow) Close() {
 
 func (w *DesktopWindow) DidClose(err error) {
 	w.native = nil
+	w.Keyboard = SessionKeyboard{}
 	w.Activate = nil
 	w.Center = nil
 	w.FitFrame = nil

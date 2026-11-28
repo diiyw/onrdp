@@ -810,7 +810,7 @@ func TestSessionStageIsLaidOut(t *testing.T) {
 	}
 }
 
-func TestRemoteInputReceivesKeyboardFocus(t *testing.T) {
+func TestRemoteInputReceivesKeyboardFocusWithoutPaintingCaret(t *testing.T) {
 	context, mod, runtime, world := mountRuntimeWorldSize(t, 1024, 700)
 	mod.route("rdp")
 	if err := context.Content().SyncHTML(); err != nil {
@@ -826,6 +826,16 @@ func TestRemoteInputReceivesKeyboardFocus(t *testing.T) {
 	control, ok := context.Content().HTMLControl(context.Content().Root(), "rdp-input")
 	if !ok || mod.focusInput || context.Content().FocusedControl() != control {
 		t.Fatalf("remote input did not receive keyboard focus: control=%v exists=%t pending=%t focused=%v textfield=%t", control, ok, mod.focusInput, context.Content().FocusedControl(), context.Content().Has[ui.TextField](control))
+	}
+	if err := ui.SyncSystem("").Run(world); err != nil {
+		t.Fatal(err)
+	}
+	caret, ok := ui.FindPart[ui.CaretPart, ui.SurfaceStyle](world, control)
+	if !ok {
+		t.Fatal("remote input caret missing")
+	}
+	if background := world.GetRef[scene.UIBackground2D](caret); background.Shape.Fill.A*background.Alpha > 0 {
+		t.Fatal("focused remote input paints a local caret")
 	}
 }
 

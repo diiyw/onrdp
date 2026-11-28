@@ -71,24 +71,30 @@ func (d *dartObject) boolean() bool {
 }
 
 type core struct {
-	alloc      func(int32) *wireBytes
-	free       func(*dartObject)
-	post       func(uintptr)
-	version    func(int64)
-	init       func(int64, *wireBytes, *wireBytes)
-	option     func(int64, *wireBytes, *wireBytes)
-	add        func(*wireBytes, *wireBytes, bool, bool, bool, bool, bool, *wireBytes, bool, *wireBytes, bool, *wireBytes, *wireBytes) *dartObject
-	start      func(int64, *wireBytes, *wireBytes)
-	close      func(int64, *wireBytes)
-	toggle     func(int64, *wireBytes, *wireBytes)
-	getToggle  func(*wireBytes, *wireBytes) *dartObject
-	getSize    func(*wireBytes, uintptr) *dartObject
-	rgba       func(string, uintptr) *byte
-	next       func(*wireBytes, uintptr) *dartObject
-	mouse      func(int64, *wireBytes, *wireBytes)
-	key        func(int64, *wireBytes, *wireBytes, bool, bool, bool, bool, bool, bool)
-	text       func(int64, *wireBytes, *wireBytes)
-	ctrlAltDel func(int64, *wireBytes)
+	alloc            func(int32) *wireBytes
+	free             func(*dartObject)
+	post             func(uintptr)
+	version          func(int64)
+	init             func(int64, *wireBytes, *wireBytes)
+	option           func(int64, *wireBytes, *wireBytes)
+	add              func(*wireBytes, *wireBytes, bool, bool, bool, bool, bool, *wireBytes, bool, *wireBytes, bool, *wireBytes, *wireBytes) *dartObject
+	start            func(int64, *wireBytes, *wireBytes)
+	close            func(int64, *wireBytes)
+	toggle           func(int64, *wireBytes, *wireBytes)
+	getToggle        func(*wireBytes, *wireBytes) *dartObject
+	setQuality       func(int64, *wireBytes, *wireBytes)
+	setCustomQuality func(int64, *wireBytes, int32)
+	setCustomFPS     func(int64, *wireBytes, int32)
+	getSize          func(*wireBytes, uintptr) *dartObject
+	rgba             func(string, uintptr) *byte
+	next             func(*wireBytes, uintptr) *dartObject
+	mouse            func(int64, *wireBytes, *wireBytes)
+	key              func(int64, *wireBytes, *wireBytes, bool, bool, bool, bool, bool, bool)
+	mappedKey        func(int64, *wireBytes, *wireBytes, int32, int32, bool)
+	supportsKeyMode  func(*wireBytes, *wireBytes) *dartObject
+	setKeyMode       func(int64, *wireBytes, *wireBytes)
+	text             func(int64, *wireBytes, *wireBytes)
+	ctrlAltDel       func(int64, *wireBytes)
 }
 
 var coreState struct {
@@ -188,8 +194,13 @@ func loadCore() (*core, error) {
 		"wire_session_close": &c.close, "wire_session_get_rgba_size": &c.getSize,
 		"session_get_rgba": &c.rgba, "wire_session_next_rgba": &c.next,
 		"wire_session_send_mouse": &c.mouse, "wire_session_input_key": &c.key,
-		"wire_session_input_string": &c.text, "wire_session_ctrl_alt_del": &c.ctrlAltDel,
+		"wire_session_handle_flutter_key_event":   &c.mappedKey,
+		"wire_session_is_keyboard_mode_supported": &c.supportsKeyMode,
+		"wire_session_set_keyboard_mode":          &c.setKeyMode,
+		"wire_session_input_string":               &c.text, "wire_session_ctrl_alt_del": &c.ctrlAltDel,
 		"wire_session_toggle_option": &c.toggle, "wire_session_get_toggle_option_sync": &c.getToggle,
+		"wire_session_set_image_quality":        &c.setQuality,
+		"wire_session_set_custom_image_quality": &c.setCustomQuality, "wire_session_set_custom_fps": &c.setCustomFPS,
 	} {
 		addr, err := symbol(name)
 		if err != nil {

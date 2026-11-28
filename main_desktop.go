@@ -8,7 +8,9 @@ import (
 	"math"
 
 	"github.com/onix-engine/onix"
+	"github.com/onix-engine/onix/input"
 	"github.com/onix-engine/onix/project"
+	"github.com/onix-engine/onix/ui"
 	"github.com/onix-engine/onix/window"
 	"onrdp/internal/platform"
 	"onrdp/internal/store"
@@ -16,6 +18,7 @@ import (
 
 func runProject(plan project.ProjectPlan, source fs.FS) error {
 	var application onix.Application
+	keyboards := desktopKeyboards{windows: make(map[*keyboardCapture]struct{})}
 	var pending []*platform.DesktopWindow
 	launcher := &platform.DesktopWindow{OpenSession: func(w *platform.DesktopWindow) {
 		pending = append(pending, w)
@@ -32,12 +35,33 @@ func runProject(plan project.ProjectPlan, source fs.FS) error {
 		} else if w.Host.ID != "" {
 			w.Center = func() { placeWindow(app.Context, 0, 0, true) }
 		}
-		if err := application.Add(app, func() { w.DidClose(nil) }); err != nil {
+		var keyboard *keyboardCapture
+		if err := application.Add(app, func() {
+			keyboards.remove(keyboard)
+			w.DidClose(nil)
+		}); err != nil {
 			app.Destroy()
 			return err
 		}
 		if w.Host.ID != "" {
 			w.Activate = func() { activateWindow(app.Context) }
+		}
+		if w.Keyboard.Ready != nil {
+			focused, pointer, grab := nativeKeyboard(app.Context)
+			wakeAt := app.WakeAt
+			if pointer == nil {
+				wakeAt = nil
+				pointer = func() (float32, float32, bool) {
+					state, _ := app.World.GetResource[*input.State]()
+					p := state.Pointer()
+					return p.X, p.Y, p.Device == input.PointerDeviceMouse
+				}
+			}
+			keyboard = &keyboardCapture{session: &w.Keyboard, focused: focused, pointer: pointer, grab: grab, wakeAt: wakeAt}
+			w.Keyboard.Active = keyboard.ready
+			w.Keyboard.Blur = func() { ui.FocusControl(app.World, 0) }
+			keyboards.windows[keyboard] = struct{}{}
+			app.AddInputHandler(input.PhaseGlobal, keyboards.handler(keyboard))
 		}
 		return nil
 	}
@@ -56,6 +80,7 @@ func runProject(plan project.ProjectPlan, source fs.FS) error {
 		}
 		clear(pending)
 		pending = pending[:0]
+		keyboards.poll()
 		return nil
 	}
 	return application.Run()

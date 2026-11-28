@@ -50,7 +50,8 @@ type Host struct {
 	// DynamicSize is retained for compatibility; windows only scale locally.
 	DynamicSize bool `json:"dynamicSize"`
 
-	RustDeskNetwork rustdesk.Network `json:"rustdeskNetwork,omitzero"`
+	RustDeskNetwork rustdesk.Network      `json:"rustdeskNetwork,omitzero"`
+	RustDeskQuality rustdesk.VideoQuality `json:"rustdeskQuality,omitzero"`
 }
 
 // NewID returns a random identifier for a freshly created host.

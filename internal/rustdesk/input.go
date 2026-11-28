@@ -10,7 +10,27 @@ import (
 	"onrdp/internal/rdpclient"
 )
 
-type inputOperation func(*core, int64, *wireBytes)
+type inputOperation func(*core, *session, int64, *wireBytes)
+
+// Each mask includes the left and right USB keyboard modifier usages.
+const (
+	controlKeys = 0x11
+	shiftKeys   = 0x22
+	altKeys     = 0x44
+	commandKeys = 0x88
+)
+
+func (s *session) configureKeyboard(c *core) error {
+	const mode = "map"
+	c.syncValue(c.supportsKeyMode(c.bytes(s.id[:]), c.str(mode)), func(value *dartObject) {
+		s.mappedKeyboard = value.boolean()
+	})
+	if !s.mappedKeyboard {
+		return nil
+	}
+	_, err := s.call(func(port int64) { c.setKeyMode(port, c.bytes(s.id[:]), c.str(mode)) })
+	return err
+}
 
 func (c *Client) queue(input inputOperation) {
 	c.mu.Lock()
@@ -30,6 +50,34 @@ func (c *Client) KeyDown(key rdpclient.Key) { c.sendKey(key, true) }
 func (c *Client) KeyUp(key rdpclient.Key)   { c.sendKey(key, false) }
 
 func (c *Client) sendKey(key rdpclient.Key, down bool) {
+	c.queue(func(core *core, s *session, port int64, id *wireBytes) {
+		s.sendKey(core, port, id, key, down)
+	})
+}
+
+func (s *session) sendKey(c *core, port int64, id *wireBytes, key rdpclient.Key, down bool) {
+	usage := keyboardUsage(key)
+	mods := s.heldModifiers
+	if usage >= 0xe0 && usage <= 0xe7 {
+		mask := uint8(1) << (usage - 0xe0)
+		if down {
+			s.heldModifiers |= mask
+		} else {
+			s.heldModifiers &^= mask
+		}
+	}
+	if s.mappedKeyboard && usage != 0 {
+		if down {
+			switch usage {
+			case 0x39: // Caps Lock
+				s.keyboardLocks ^= 1 << 1
+			case 0x53: // Num Lock
+				s.keyboardLocks ^= 1 << 2
+			}
+		}
+		c.mappedKey(port, id, c.str(""), int32(usage), s.keyboardLocks, down)
+		return
+	}
 	keys := legacyKeys[:]
 	if key.Extended {
 		keys = extendedKeys[:]
@@ -38,15 +86,15 @@ func (c *Client) sendKey(key rdpclient.Key, down bool) {
 		return
 	}
 	if name := keys[key.Scancode]; name != "" {
-		c.queue(func(core *core, port int64, id *wireBytes) {
-			core.key(port, id, core.str(name), down, false, false, false, false, false)
-		})
+		// Legacy peers include the modifier state in each event.
+		c.key(port, id, c.str(name), down, false,
+			mods&altKeys != 0, mods&controlKeys != 0, mods&shiftKeys != 0, mods&commandKeys != 0)
 	}
 }
 
 func (c *Client) SendSequence(keys []rdpclient.Key) {
 	if slices.Equal(keys, rdpclient.CtrlAltDelete) {
-		c.queue(func(core *core, port int64, id *wireBytes) { core.ctrlAltDel(port, id) })
+		c.queue(func(core *core, _ *session, port int64, id *wireBytes) { core.ctrlAltDel(port, id) })
 		return
 	}
 	for _, key := range keys {
@@ -58,7 +106,7 @@ func (c *Client) SendSequence(keys []rdpclient.Key) {
 }
 
 func (c *Client) SendText(text string) {
-	c.queue(func(core *core, port int64, id *wireBytes) {
+	c.queue(func(core *core, _ *session, port int64, id *wireBytes) {
 		core.text(port, id, core.str(text))
 	})
 }
@@ -100,12 +148,52 @@ func (c *Client) Wheel(_, _ int, notches int, horizontal bool) {
 }
 
 func (c *Client) sendMouse(kind, button string, x, y int) {
-	c.queue(func(core *core, port int64, id *wireBytes) {
-		msg, _ := json.Marshal(map[string]string{
+	c.queue(func(core *core, s *session, port int64, id *wireBytes) {
+		event := map[string]string{
 			"type": kind, "buttons": button, "x": strconv.Itoa(x), "y": strconv.Itoa(y),
-		})
+		}
+		// RustDesk reconciles the peer's held modifiers when a button goes down.
+		for name, mask := range map[string]uint8{"alt": altKeys, "ctrl": controlKeys, "shift": shiftKeys, "command": commandKeys} {
+			if s.heldModifiers&mask != 0 {
+				event[name] = "true"
+			}
+		}
+		msg, _ := json.Marshal(event)
 		core.mouse(port, id, core.bytes(msg))
 	})
+}
+
+// USB keyboard usages identify physical positions for RustDesk's Map mode.
+// The bridge supplies the keyboard page itself and takes only the usage ID.
+func keyboardUsage(key rdpclient.Key) uint8 {
+	usages := set1Usages[:]
+	if key.Extended {
+		usages = extendedUsages[:]
+	}
+	if int(key.Scancode) >= len(usages) {
+		return 0
+	}
+	return usages[key.Scancode]
+}
+
+var set1Usages = [...]uint8{
+	0x01: 0x29, 0x02: 0x1e, 0x03: 0x1f, 0x04: 0x20, 0x05: 0x21, 0x06: 0x22, 0x07: 0x23,
+	0x08: 0x24, 0x09: 0x25, 0x0a: 0x26, 0x0b: 0x27, 0x0c: 0x2d, 0x0d: 0x2e, 0x0e: 0x2a, 0x0f: 0x2b,
+	0x10: 0x14, 0x11: 0x1a, 0x12: 0x08, 0x13: 0x15, 0x14: 0x17, 0x15: 0x1c, 0x16: 0x18, 0x17: 0x0c,
+	0x18: 0x12, 0x19: 0x13, 0x1a: 0x2f, 0x1b: 0x30, 0x1c: 0x28, 0x1d: 0xe0, 0x1e: 0x04, 0x1f: 0x16,
+	0x20: 0x07, 0x21: 0x09, 0x22: 0x0a, 0x23: 0x0b, 0x24: 0x0d, 0x25: 0x0e, 0x26: 0x0f, 0x27: 0x33,
+	0x28: 0x34, 0x29: 0x35, 0x2a: 0xe1, 0x2b: 0x31, 0x2c: 0x1d, 0x2d: 0x1b, 0x2e: 0x06, 0x2f: 0x19,
+	0x30: 0x05, 0x31: 0x11, 0x32: 0x10, 0x33: 0x36, 0x34: 0x37, 0x35: 0x38, 0x36: 0xe5, 0x37: 0x55,
+	0x38: 0xe2, 0x39: 0x2c, 0x3a: 0x39, 0x3b: 0x3a, 0x3c: 0x3b, 0x3d: 0x3c, 0x3e: 0x3d, 0x3f: 0x3e,
+	0x40: 0x3f, 0x41: 0x40, 0x42: 0x41, 0x43: 0x42, 0x44: 0x43, 0x45: 0x53, 0x46: 0x47, 0x47: 0x5f,
+	0x48: 0x60, 0x49: 0x61, 0x4a: 0x56, 0x4b: 0x5c, 0x4c: 0x5d, 0x4d: 0x5e, 0x4e: 0x57, 0x4f: 0x59,
+	0x50: 0x5a, 0x51: 0x5b, 0x52: 0x62, 0x53: 0x63, 0x57: 0x44, 0x58: 0x45,
+}
+
+var extendedUsages = [...]uint8{
+	0x1c: 0x58, 0x1d: 0xe4, 0x35: 0x54, 0x37: 0x46, 0x38: 0xe6, 0x47: 0x4a, 0x48: 0x52, 0x49: 0x4b,
+	0x4b: 0x50, 0x4d: 0x4f, 0x4f: 0x4d, 0x50: 0x51, 0x51: 0x4e, 0x52: 0x49, 0x53: 0x4c, 0x5b: 0xe3,
+	0x5c: 0xe7, 0x5d: 0x65,
 }
 
 // RustDesk's legacy input accepts virtual-key names. The indices are the same

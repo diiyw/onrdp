@@ -6,4 +6,4 @@ import "onrdp/internal/rustdesk"
 
 const rustDeskSupported = false
 
-func newRustDeskClient(func(), rustdesk.Network) remoteClient { return nil }
+func newRustDeskClient(func(), rustdesk.Network, rustdesk.VideoQuality) remoteClient { return nil }

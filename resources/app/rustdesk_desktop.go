@@ -6,6 +6,6 @@ import "onrdp/internal/rustdesk"
 
 const rustDeskSupported = true
 
-func newRustDeskClient(wake func(), network rustdesk.Network) remoteClient {
-	return rustdesk.New(wake, network)
+func newRustDeskClient(wake func(), network rustdesk.Network, quality rustdesk.VideoQuality) remoteClient {
+	return rustdesk.New(wake, network, quality)
 }

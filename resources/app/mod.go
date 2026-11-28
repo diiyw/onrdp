@@ -51,6 +51,7 @@ type Mod struct {
 	favoriteOnly   bool
 	connected      bool
 	pressed        [3]bool
+	heldKeys       []rdpclient.Key
 	dragging       bool
 	dirty          bool
 	focusInput     bool
@@ -154,11 +155,13 @@ func (m *Mod) Install(c *module.Context) error {
 		}
 	}
 	if m.sessionChild() && m.window.Host.Protocol == store.RustDesk && rustDeskSupported {
-		m.client = newRustDeskClient(wake, m.window.Host.RustDeskNetwork)
+		host := m.window.Host
+		m.client = newRustDeskClient(wake, host.RustDeskNetwork, host.RustDeskQuality)
 	} else {
 		m.client = rdpclient.New(wake)
 	}
 	if m.sessionChild() {
+		m.bindDesktopInput()
 		m.startSessionChild()
 	} else {
 		platform.Register(platform.Hooks{
@@ -201,18 +204,9 @@ func (m *Mod) Update(c *module.Context, tick module.Tick) error {
 		m.launcherKeys(c)
 	}
 	host := c.Host()
-	if m.page == "rdp" && m.confirm == "" {
-		if control, ok := c.Content().HTMLControl(c.Content().Root(), "rdp-input"); ok && c.Content().Has[ui.TextField](control) {
-			// HTML reconciliation can replace this control, and UI pointer
-			// dispatch runs after module updates, clearing focus on frame clicks.
-			// Rebind the handler and restore focus instead of trusting the last
-			// focus request to survive the rest of the engine's frame.
-			if err := c.Content().Insert(control, ui.TextFieldKeyHandler{Handle: func(state *input.State) bool { return m.remoteKeys(state) }}); err != nil {
-				return err
-			}
-			if (m.focusInput || c.Content().FocusedControl() != control) && c.Content().Focus(control) {
-				m.focusInput = false
-			}
+	if m.page == "rdp" {
+		if err := m.focusSessionInput(c); err != nil {
+			return err
 		}
 	}
 	// Remote pixels must reach the screen on the frame they arrive, so the
@@ -280,13 +274,14 @@ func (m *Mod) syncSession(c *module.Context) {
 	}
 }
 
-// clipboardShared reports whether the current session redirects the clipboard.
+// clipboardShared reports whether the RDP session needs clipboard forwarding.
+// RustDesk syncs the system clipboard through its native core.
 func (m *Mod) clipboardShared() bool {
 	if m.client == nil || !m.vault.Settings().Clipboard {
 		return false
 	}
 	h, ok := m.findHost(m.selected)
-	return ok && h.Clipboard
+	return ok && h.Protocol != store.RustDesk && h.Clipboard
 }
 
 // pushClipboard publishes the local clipboard so a paste inside the remote
@@ -318,8 +313,11 @@ func (m *Mod) route(page string) {
 	m.lastRowClick = rowClick{}
 	m.toolbar.dragging = false
 	m.hide("rdp-tooltip", true)
-	if m.page == "rdp" && page != "rdp" && m.fullscreen {
-		m.toggleFullscreen()
+	if m.page == "rdp" && page != "rdp" {
+		m.releaseDesktopInput()
+		if m.fullscreen {
+			m.toggleFullscreen()
+		}
 	}
 	m.page = page
 	m.focusHostName = page == "edit"
@@ -638,6 +636,7 @@ func (m *Mod) connect(h store.Host) {
 	if m.client == nil {
 		return
 	}
+	m.releaseDesktopInput()
 	m.client.Close()
 	m.pressed = [3]bool{}
 	settings := m.vault.Settings()
@@ -653,7 +652,7 @@ func (m *Mod) connect(h store.Host) {
 		Width:     width,
 		Height:    height,
 		Quality:   m.sessionQuality,
-		Clipboard: h.Clipboard && settings.Clipboard,
+		Clipboard: settings.Clipboard && (h.Protocol == store.RustDesk || h.Clipboard),
 		Reconnect: settings.Reconnect,
 		Console:   h.ConsoleMode,
 	})
@@ -698,12 +697,14 @@ func (m *Mod) edit(c *module.Context, id string) {
 	m.draft = h
 	m.hide("host-protocol", id != "" || !m.sessionLauncher())
 	m.hide("protocol-rustdesk", !rustDeskSupported)
+	quality := h.RustDeskQuality.Normalized()
 	m.fields = map[string]string{
 		"name": h.Name, "adb": "", "rustdesk-id": "", "rustdesk-password": "", "address": h.Address, "port": strconv.Itoa(h.Port),
 		"user": h.User, "domain": h.Domain, "group": h.Group, "password": h.Password,
 		"width": strconv.Itoa(h.Width), "height": strconv.Itoa(h.Height),
 		"rustdesk-id-server": h.RustDeskNetwork.IDServer, "rustdesk-relay-server": h.RustDeskNetwork.RelayServer,
-		"rustdesk-key": h.RustDeskNetwork.Key,
+		"rustdesk-key":           h.RustDeskNetwork.Key,
+		"rustdesk-image-quality": strconv.Itoa(quality.ImageQuality), "rustdesk-fps": strconv.Itoa(quality.FPS),
 	}
 	switch h.Protocol {
 	case store.RustDesk:
@@ -724,7 +725,6 @@ func (m *Mod) edit(c *module.Context, id string) {
 	m.toggle("field-clipboard", h.Clipboard)
 	m.toggle("field-console", h.ConsoleMode)
 	m.toggle("rustdesk-force-relay", h.RustDeskNetwork.ForceRelay)
-	m.renderQuality()
 	m.route("edit")
 	m.renderHostProtocol()
 	if h.Protocol == store.Android {
@@ -743,6 +743,15 @@ func (m *Mod) renderHostProtocol() {
 	m.hide("rustdesk-fields", !rustDesk)
 	m.hide("rustdesk-credentials", !rustDesk)
 	m.hide("rustdesk-network", !rustDesk)
+	m.hide("desktop-options", android)
+	m.hide("quality-help", !rdp)
+	m.hide("rustdesk-quality-help", !rustDesk)
+	displayTitle := "显示与共享"
+	if rustDesk {
+		displayTitle = "显示"
+	}
+	m.text("l10n-34", m.tr(displayTitle))
+	m.renderQuality()
 	m.renderRustDeskCopyButton()
 	for _, id := range []string{"rdp-address-fields", "rdp-credentials", "rdp-options"} {
 		m.hide(id, !rdp)
@@ -773,10 +782,17 @@ func (m *Mod) choice(id string, selected bool) {
 }
 
 func (m *Mod) renderQuality() {
-	selected := rdpclient.Quality(m.draft.Quality).Normalized()
-	for _, quality := range []rdpclient.Quality{rdpclient.QualitySmooth, rdpclient.QualityBalanced, rdpclient.QualityHigh} {
-		m.choice("quality-"+string(quality), quality == selected)
+	rustDesk := m.draft.Protocol == store.RustDesk
+	selected := string(rdpclient.Quality(m.draft.Quality).Normalized())
+	if rustDesk {
+		selected = m.draft.RustDeskQuality.Normalized().Mode
 	}
+	for _, mode := range []string{"smooth", "balanced", "high", rustdesk.QualityCustom} {
+		m.choice("quality-"+mode, mode == selected)
+	}
+	m.node("quality-presets").SetAttribute("data-protocol", m.draft.Protocol)
+	m.hide("quality-custom", !rustDesk)
+	m.hide("rustdesk-custom-quality", !rustDesk || selected != rustdesk.QualityCustom)
 }
 
 func (m *Mod) save(c *module.Context) {
@@ -790,9 +806,18 @@ func (m *Mod) save(c *module.Context) {
 			m.toast(err)
 			return
 		}
+		quality := h.RustDeskQuality
+		quality.ImageQuality, _ = strconv.Atoi(strings.TrimSpace(m.fields["rustdesk-image-quality"]))
+		quality.FPS, _ = strconv.Atoi(strings.TrimSpace(m.fields["rustdesk-fps"]))
+		normalizedQuality := quality.Normalized()
+		if quality.Mode == rustdesk.QualityCustom && quality != normalizedQuality {
+			m.toast(i18n.NewError("请输入范围内的整数码率比例和帧率"))
+			return
+		}
 		h = store.Host{
 			ID: h.ID, Name: h.Name, Group: h.Group, Protocol: store.RustDesk, Favorite: h.Favorite,
 			Address: id, Password: m.fields["rustdesk-password"], RustDeskNetwork: m.rustDeskNetwork(),
+			RustDeskQuality: normalizedQuality,
 		}
 	case store.Android:
 		h = store.Host{ID: h.ID, Name: h.Name, Group: h.Group, Protocol: store.Android, Favorite: h.Favorite, Wireless: h.Wireless, Address: strings.TrimSpace(m.fields["adb"])}
@@ -968,8 +993,6 @@ func (m *Mod) renderSession() {
 	}
 }
 
-// remoteKeys translates keyboard input into remote scancodes. Returning true
-// keeps the local text field from also editing its own buffer.
 // Launcher shortcuts use the platform command modifier. Remote windows own
 // their entire keyboard stream, including shortcuts used by the remote OS.
 func (m *Mod) launcherKeys(c *module.Context) {
@@ -1008,6 +1031,102 @@ func (m *Mod) launcherKeys(c *module.Context) {
 	}
 }
 
+func (m *Mod) bindDesktopInput() {
+	m.hide("rdp-input", true)
+	m.hide("rdp-keyboard", false)
+	m.window.Keyboard.Ready = func() bool {
+		return !m.window.Closing && m.page == "rdp" && m.confirm == "" && !m.toolbar.dragging &&
+			m.client.Status().State == rdpclient.StateConnected
+	}
+	m.window.Keyboard.OverFrame = func(x, y float32) bool {
+		_, _, inside := m.remotePoint(x, y)
+		return inside
+	}
+	m.window.Keyboard.Key = m.desktopKey
+	m.window.Keyboard.Release = m.releaseDesktopInput
+}
+
+func (m *Mod) focusSessionInput(c *module.Context) error {
+	fieldID, handle := "rdp-input", m.remoteKeys
+	native := m.window != nil && m.window.Keyboard.Ready != nil
+	if native {
+		fieldID = "rdp-keyboard"
+		// The native stream already forwards physical keys. Reserve keyboard
+		// focus here to keep Tab and Enter away from the local toolbar.
+		handle = func(*input.State) bool { return m.desktopInputActive() }
+	}
+	content := c.Content()
+	control, ok := content.HTMLControl(content.Root(), fieldID)
+	if !ok {
+		return nil
+	}
+	if native && !m.desktopInputActive() {
+		if m.window.Keyboard.Blur != nil && content.FocusedControl() == control {
+			m.window.Keyboard.Blur()
+		}
+		return nil
+	}
+	if m.confirm != "" {
+		return nil
+	}
+	if !native && !content.Has[ui.StyleOverride[ui.TextFieldStyle]](control) {
+		if err := content.Insert(control, ui.StyleOverride[ui.TextFieldStyle]{}); err != nil {
+			return err
+		}
+	}
+	// HTML reconciliation can replace this control, and pointer dispatch can
+	// clear its focus after the module update.
+	if err := content.Insert(control, ui.TextFieldKeyHandler{Handle: handle}); err != nil {
+		return err
+	}
+	if (m.focusInput || content.FocusedControl() != control) && content.Focus(control) {
+		m.focusInput = false
+	}
+	return nil
+}
+
+func (m *Mod) desktopKey(code input.KeyCode, down bool) {
+	key, ok := rdpclient.Scancode(code)
+	if !ok {
+		return
+	}
+	index := slices.Index(m.heldKeys, key)
+	if down && index < 0 {
+		if code == input.KeyV && m.window != nil && m.window.Keyboard.Active != nil {
+			left, _ := rdpclient.Scancode(input.KeyLeftControl)
+			right, _ := rdpclient.Scancode(input.KeyRightControl)
+			if slices.Contains(m.heldKeys, left) || slices.Contains(m.heldKeys, right) {
+				m.pushClipboard()
+			}
+		}
+		m.heldKeys = append(m.heldKeys, key)
+		m.client.KeyDown(key)
+	} else if !down && index >= 0 {
+		m.heldKeys = slices.Delete(m.heldKeys, index, index+1)
+		m.client.KeyUp(key)
+	}
+}
+
+func (m *Mod) desktopInputActive() bool {
+	return m.window == nil || m.window.Keyboard.Active == nil || m.window.Keyboard.Active()
+}
+
+func (m *Mod) releaseDesktopInput() {
+	if m.client == nil {
+		return
+	}
+	for _, key := range slices.Backward(m.heldKeys) {
+		m.client.KeyUp(key)
+	}
+	m.heldKeys = m.heldKeys[:0]
+	for button, down := range m.pressed {
+		if down {
+			m.client.MouseButton(button, false, m.remoteX, m.remoteY)
+		}
+	}
+	m.pressed = [3]bool{}
+}
+
 func (m *Mod) remoteKeys(state *input.State) bool {
 	if m.page != "rdp" || (m.client == nil && m.mirror == nil) {
 		return false
@@ -1022,33 +1141,19 @@ func (m *Mod) remoteKeys(state *input.State) bool {
 	if stateNow != rdpclient.StateConnected {
 		return true
 	}
-	windowKey := func(key input.KeyCode) bool {
-		return state.KeyPressed(key) && (m.mirror == nil || !state.KeyPressedDuringComposition(key))
-	}
-	if windowKey(input.KeyF11) && m.host != nil && m.host.ToggleFullscreen != nil {
-		m.toggleFullscreen()
-		return true
-	}
-	if m.fullscreen && windowKey(input.KeyEscape) {
-		m.toggleFullscreen()
-		return true
-	}
 	if m.mirror != nil {
 		return m.androidKeys(state)
 	}
 	handled := false
 	for _, key := range rdpclient.Keycodes() {
-		pressed, released := state.KeyPressed(key), state.KeyReleased(key)
-		if !pressed && !released {
-			continue
+		if state.KeyPressed(key) {
+			m.desktopKey(key, true)
+			handled = true
 		}
-		mapped, _ := rdpclient.Scancode(key)
-		if pressed {
-			m.client.KeyDown(mapped)
-		} else {
-			m.client.KeyUp(mapped)
+		if state.KeyReleased(key) {
+			m.desktopKey(key, false)
+			handled = true
 		}
-		handled = true
 	}
 	if (state.KeyHeld(input.KeyLeftControl) || state.KeyHeld(input.KeyRightControl)) && state.KeyPressed(input.KeyV) {
 		m.pushClipboard()
@@ -1080,6 +1185,7 @@ func unicodeOnly(text string) string {
 }
 
 func (m *Mod) requestConfirm(kind, title, description string, args ...any) {
+	m.releaseDesktopInput()
 	m.confirm = kind
 	m.text("confirm-title", m.tr(title))
 	m.text("confirm-description", m.tr(description, args...))
@@ -1105,12 +1211,15 @@ func (m *Mod) OnMessage(c *module.Context, message module.Message) error {
 				run.native.Key(66, 0, false)
 			}
 			m.resetInput(c)
-		} else if event.HTMLID == "rdp-input" && m.client != nil {
+		} else if event.HTMLID == "rdp-input" && m.client != nil && m.desktopInputActive() {
 			m.client.SendSequence([]rdpclient.Key{{Scancode: 0x1C}})
 			m.resetInput(c)
 		}
 		return nil
 	case htmlui.EventClick:
+		if event.HTMLID == "rdp-keyboard" {
+			return nil
+		}
 		// Row buttons use the underlying tap, which identifies the input device.
 		if m.isActivationRow(event.HTMLID) {
 			return nil
@@ -1179,6 +1288,9 @@ func (m *Mod) input(id, value string) {
 // stage box onto remote pixels, so the pointer lands where it looks.
 func (m *Mod) pointer(event module.Input) {
 	if m.toolbarPointer(event.Event) {
+		return
+	}
+	if !m.desktopInputActive() {
 		return
 	}
 	var pointer pointerClient = m.client
@@ -1278,9 +1390,12 @@ func (m *Mod) remotePoint(x, y float32) (int, int, bool) {
 	}
 	status := m.status
 	localX, localY := x-bounds.X-offsetX, y-bounds.Y-offsetY
+	if localX < 0 || localY < 0 {
+		return 0, 0, false
+	}
 	remoteX := int(localX / scale)
 	remoteY := int(localY / scale)
-	if remoteX < 0 || remoteY < 0 || remoteX >= status.Width || remoteY >= status.Height {
+	if remoteX >= status.Width || remoteY >= status.Height {
 		return 0, 0, false
 	}
 	return remoteX, remoteY, true
@@ -1392,8 +1507,13 @@ func (m *Mod) click(c *module.Context, id string) {
 	case "field-console":
 		m.draft.ConsoleMode = !m.draft.ConsoleMode
 		m.toggle("field-console", m.draft.ConsoleMode)
-	case "quality-smooth", "quality-balanced", "quality-high":
-		m.draft.Quality = strings.TrimPrefix(id, "quality-")
+	case "quality-smooth", "quality-balanced", "quality-high", "quality-custom":
+		mode := strings.TrimPrefix(id, "quality-")
+		if m.draft.Protocol == store.RustDesk {
+			m.draft.RustDeskQuality.Mode = mode
+		} else {
+			m.draft.Quality = mode
+		}
 		m.renderQuality()
 		m.dirty = true
 	case "edit-save":
@@ -1532,6 +1652,7 @@ func (m *Mod) closeRequested() bool {
 }
 
 func (m *Mod) disconnect() {
+	m.releaseDesktopInput()
 	if m.client != nil {
 		m.client.Close()
 		m.status = m.client.Status()
@@ -1591,6 +1712,7 @@ func (m *Mod) confirmed(c *module.Context) {
 // Destroy releases the session and the GPU texture. The frame provider is put
 // back so a remount starts from the project provider instead of a disposed one.
 func (m *Mod) Destroy(c *module.Context) error {
+	m.releaseDesktopInput()
 	if m.android.cancel != nil {
 		m.android.cancel()
 	}
