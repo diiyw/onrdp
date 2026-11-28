@@ -1,6 +1,6 @@
 # OnRDP 开发指南
 
-安装和连接步骤见[用户指南](../README.md)。
+安装和连接步骤见用户指南。[简体中文](../README.zh-CN.md) · [English](../README.md)
 
 ## 从源码构建与打包
 

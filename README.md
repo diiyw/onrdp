@@ -1,91 +1,93 @@
 # OnRDP
 
-**原生远程桌面客户端 · 无 Electron · 无 WebView**
+**English** · [简体中文](README.zh-CN.md)
 
-在 Windows、macOS 和 Linux 上集中管理 **RDP 远程桌面**、**RustDesk 连接**和 **Android 投屏与控制**。界面由 Onix 原生渲染，RDP 连接使用 FreeRDP。
+**Native remote desktop client · No Electron · No WebView**
 
-**[下载 OnRDP](https://github.com/diiyw/onrdp/releases/latest)** · [安装说明](#安装) · [连接指南](#添加第一台主机)
+Manage **RDP remote desktops**, **RustDesk connections**, and **Android screen mirroring and control** in one app on Windows, macOS, and Linux. Onix renders the interface natively, and FreeRDP handles RDP connections.
 
-如果 OnRDP 对你有用，欢迎点击仓库右上角的 **Star**。
+**[Download OnRDP](https://github.com/diiyw/onrdp/releases/latest)** · [Installation](#installation) · [Connection guide](#add-your-first-host)
 
-![OnRDP 主窗口截图，主机列表中显示 Android、RDP 和 RustDesk 连接](docs/onrdp-screenshot.png)
+If OnRDP is useful to you, consider giving it a **Star** on GitHub.
 
-## 安装
+![OnRDP host list showing Android, RDP, and RustDesk connections in the Simplified Chinese interface](docs/onrdp-screenshot.png)
 
-打开最新发行版，在 **Assets** 中选择你这台电脑对应的安装包。[GitHub Releases](https://github.com/diiyw/onrdp/releases/latest)
+## Installation
 
-| 本机系统 | 安装包 | 安装方式 |
+Open the latest release and choose the installer for your system under **Assets**. [GitHub Releases](https://github.com/diiyw/onrdp/releases/latest)
+
+| Your system | Installer | How to install |
 | --- | --- | --- |
-| Windows 64 位 | `onrdp-windows-amd64-setup.exe` | 运行安装程序 |
-| macOS Apple 芯片 | `OnRDP-macos-arm64.dmg` | 打开后将 OnRDP 拖到「应用程序」 |
-| macOS Intel 芯片 | `OnRDP-macos-amd64.dmg` | 打开后将 OnRDP 拖到「应用程序」 |
-| Ubuntu 24.04 / Linux Mint 22（64 位） | `onrdp-linux-amd64.deb` | 在下载目录运行下方的 APT 命令 |
+| Windows (64-bit) | `onrdp-windows-amd64-setup.exe` | Run the installer |
+| macOS (Apple silicon) | `OnRDP-macos-arm64.dmg` | Open the disk image and drag OnRDP to Applications |
+| macOS (Intel) | `OnRDP-macos-amd64.dmg` | Open the disk image and drag OnRDP to Applications |
+| Ubuntu 24.04 / Linux Mint 22 (64-bit) | `onrdp-linux-amd64.deb` | Run the commands below from your download folder |
 
 ```sh
 sudo apt update
 sudo apt install ./onrdp-linux-amd64.deb
 ```
 
-发布页的 `SHA256SUMS` 可用于校验下载文件。macOS 安装包使用临时签名，尚未经过 Apple 公证。
+Use the release's `SHA256SUMS` file to verify your download. The macOS app is ad-hoc signed and has yet to be notarized by Apple.
 
-如果所需平台的安装包尚未发布，可以登录 GitHub，在成功的工作流运行中查看 **Artifacts**。也可以从源码构建。[安装包构建记录](https://github.com/diiyw/onrdp/actions/workflows/build.yml) · [开发指南](docs/development.md)
+If your installer is missing from the release, sign in to GitHub and check **Artifacts** on a successful build, or build OnRDP from source. [Installer builds](https://github.com/diiyw/onrdp/actions/workflows/build.yml) · [Development guide (Simplified Chinese)](docs/development.md)
 
-## 添加第一台主机
+## Add your first host
 
-1. 打开 OnRDP，在「全部主机」点击「添加主机」，选择 **RDP**、**RustDesk** 或 **Android**。
-2. 填写一个便于识别的名称，再按下方对应的连接方式填写信息。分组可选。
-3. 点击「保存」，回到主机列表，点击刚保存的主机打开连接。
+1. In OnRDP, go to **All hosts**, click **Add host**, and select **RDP**, **RustDesk**, or **Android**.
+2. Give the host a name and enter the connection details below. You can also assign it to a group.
+3. Click **Save**, then click the newly added host in the list to connect.
 
-### RDP 连接 Windows
+### Connect to Windows with RDP
 
-1. 在被控电脑的「设置 → 系统 → 远程桌面」启用远程桌面，确认你的 Windows 账号有远程登录权限。Windows 家庭版不能作为 RDP 被控端。[Microsoft 远程桌面设置说明](https://learn.microsoft.com/windows-server/remote/remote-desktop-services/remotepc/remote-desktop-allow-access)
-2. 在 OnRDP 的 **RDP** 表单中填写电脑的 IP 地址或域名，以及远程桌面的端口（默认 `3389`）。
-3. 填写 Windows 用户名和登录密码。使用域账号时同时填写「域」。
+1. On the remote PC, turn on Remote Desktop under **Settings → System → Remote Desktop** and make sure your Windows account has permission to connect. Windows Home supports outgoing RDP connections only. [Microsoft's Remote Desktop setup guide](https://learn.microsoft.com/windows-server/remote/remote-desktop-services/remotepc/remote-desktop-allow-access)
+2. In the OnRDP **RDP** form, enter the PC's IP address or domain name and the Remote Desktop port (default `3389`).
+3. Enter your Windows username and password. Fill in **Domain** if you use a domain account.
 
-RDP 使用 TLS 和网络级身份验证（NLA）。当前 OnRDP 会跳过服务端证书验证，请仅在受信任的网络中连接受信任的主机。
+RDP uses TLS and Network Level Authentication (NLA). OnRDP currently skips server certificate verification. Connect only to trusted hosts on trusted networks.
 
-### RustDesk 连接远程设备
+### Connect with RustDesk
 
-1. 在被控端打开 RustDesk，查看设备 ID 和密码。
-2. 在 OnRDP 的 **RustDesk** 表单中填写设备 ID 和密码。被控端允许手动确认时，密码可以留空，由对方接受连接。
-3. 若被控端已启用 IP 直连，可在同一字段填入 IP 地址或 `IP:端口`。
+1. Open RustDesk on the remote device to find its device ID and password.
+2. In the OnRDP **RustDesk** form, enter the ID and password. If the remote device allows manual approval, you can leave the password blank and have the person at the device accept the connection.
+3. If the remote device has direct IP access enabled, you can enter its IP address or `IP:port` in the device ID field.
 
-使用自建服务器时，在「ID 与中继服务器（可选）」填写 ID 服务器（`hbbs`，默认端口 `21116`）和 `id_ed25519.pub` 中的公钥。若需指定中继服务器（`hbbr`，默认端口 `21117`），在被控端 RustDesk 的「设置 → 网络」中也填写同一地址。填好 ID 服务器后，可点击「复制被控端配置」并到被控端导入。勾选「始终使用中继」可让该主机通过中继连接。[RustDesk 自建服务器配置说明](https://rustdesk.com/docs/en/self-host/client-configuration/)
+For a self-hosted setup, open **ID and relay servers (optional)** and enter your ID server (`hbbs`, default port `21116`) and the public key from `id_ed25519.pub`. To specify a relay server (`hbbr`, default port `21117`), enter the same address under **Settings → Network** in RustDesk on the remote device. After entering the ID server, you can use **Copy settings for the remote device** and import the configuration there. Select **Always use relay** to route this host's connections through the relay. [RustDesk self-hosted client configuration](https://rustdesk.com/docs/en/self-host/client-configuration/)
 
-RustDesk 当前支持单屏画面和键鼠操作，已在 Linux 上验证实际连接。macOS 和 Windows 的原生连接尚待验证。Apple 芯片上的 RustDesk 核心库需要 macOS 12.3 或更新版本。
+RustDesk supports single-display streaming and keyboard and mouse control. RustDesk connections have been verified on Linux. Verification on macOS and Windows is pending. The RustDesk core on Apple silicon requires macOS 12.3 or later.
 
-### Android 投屏
+### Mirror an Android device
 
-**USB 连接**
+**USB**
 
-1. 在 Android 设备的「开发者选项」中开启「USB 调试」，用数据线连接电脑，并在设备上允许调试。
-2. 在 OnRDP 的 **Android** 表单中点击「刷新」，从「ADB 设备」列表选择设备，也可以在「设备序列号」中手动填写。
+1. Turn on **USB debugging** in **Developer options** on the Android device. Connect it to your computer with a data cable and allow debugging when prompted.
+2. In the OnRDP **Android** form, click **Refresh** and select the device under **ADB devices**, or enter its **Device serial** manually.
 
-**无线连接（Android 11 或更新版本）**
+**Wi-Fi (Android 11 or later)**
 
-1. 将电脑和 Android 设备连到同一个 Wi-Fi。在设备的「开发者选项」中开启「无线调试」，选择使用配对码配对。
-2. 在电脑终端用 ADB 执行 `adb pair IP:配对端口`，按提示输入配对码。如果终端找不到 `adb`，可以安装 Android SDK Platform-Tools，并在其目录运行 ADB。[Android 无线调试说明](https://developer.android.com/tools/adb#connect-to-a-device-over-wi-fi)
-3. 回到设备的「无线调试」主页，查看「IP 地址和端口」。在 OnRDP 选择「无线连接」，将这里显示的 **连接端口** 和 IP 一起填入「无线调试地址」。上一步的配对端口只用于配对。
+1. Connect both devices to the same Wi-Fi network. In **Developer options** on Android, enable **Wireless debugging** and choose **Pair device with pairing code**.
+2. In a terminal on your computer, run `adb pair IP:PAIRING_PORT` and enter the pairing code when prompted. If the terminal cannot find `adb`, install Android SDK Platform-Tools and run ADB from that directory. [Android wireless debugging guide](https://developer.android.com/tools/adb#connect-to-a-device-over-wi-fi)
+3. Return to the main **Wireless debugging** screen and find **IP address & port**. In OnRDP, choose **Wireless connection** and enter that IP address and **connection port** in **Wireless debugging address**. The pairing port from step 2 is only for pairing.
 
-## 使用主机列表和会话
+## Manage hosts and sessions
 
-- 在右上角按名称、地址或分组搜索。点击主机右侧的星标可收藏，点击铅笔可修改或删除主机。
-- 桌面连接会在独立窗口中打开。可在主窗口继续打开其他连接，或在「会话」中查看和断开连接。关闭主窗口会结束所有会话。
-- **RDP** 会话中，点击远程画面即可输入。悬浮工具条提供全屏、重连和 `Ctrl+Alt+Del`、`Alt+Tab` 等远程快捷键，也可按 `F11` 切换全屏。
-- **Android** 投屏默认跟随当前激活的屏幕，可用工具条的「切换屏幕」固定某个屏幕。工具条还提供返回、主屏幕、最近任务、音量和电源键。将一个或多个 APK 拖进投屏窗口，可依次安装到该设备。Android 7.0 及以上版本可在支持粘贴的输入框中用电脑输入法输入中文和表情，音频保留在设备上。
-- 在「设置」中可切换主题和界面语言，以及管理自动重连与剪贴板同步。主机和凭据保存在本机的加密凭据库中。
+- Use the search box in the upper right to find hosts by name, address, or group. Click the star beside a host to add it to **Favorites**, or click the pencil to edit or delete it.
+- Each connection opens in its own window. Open additional hosts from the main window, or select **Sessions** to see and disconnect active sessions. Closing the main window ends all sessions.
+- In an **RDP** session, click the remote desktop to send keyboard input to it. The floating toolbar provides full-screen mode, reconnect, and remote shortcuts such as `Ctrl+Alt+Del` and `Alt+Tab`. Press `F11` to toggle full-screen mode.
+- **Android** mirroring follows the active display by default. Use **Switch display** in the toolbar to keep mirroring a specific display. The toolbar also provides Back, Home, Recents, volume, and power controls. Drop one or more APK files into the mirroring window to install them on the device in sequence. On Android 7.0 and later, you can use your computer's input method for text such as Chinese characters and emoji in fields that accept pasting. Audio plays on the Android device.
+- In **Settings**, change the theme or language and manage automatic reconnection and clipboard sync. OnRDP stores hosts and credentials in the local encrypted vault.
 
-## 常见问题
+## Troubleshooting
 
-| 问题 | 处理方法 |
+| Problem | What to check |
 | --- | --- |
-| RDP 连不上 | 确认被控电脑已开启远程桌面、本机可访问其地址和端口，并检查账号、密码及远程登录权限。 |
-| RDP 画面卡顿 | 在「编辑主机 → 显示与共享 → 画面质量」选择「流畅」，保存后重新连接。窗口模式下，「流畅」最高请求 `1280 × 720`，「均衡」最高请求 `1920 × 1080`，「高清」使用主机配置的尺寸。 |
-| RDP 全屏分辨率与预期不同 | 全屏时 OnRDP 会按本机屏幕的实际像素请求远程分辨率。最终尺寸受服务端能力限制。若服务端未启用动态分辨率，会保留原有分辨率。 |
-| 找不到 Android 设备 | USB 连接时，检查设备是否已允许调试，再点击「刷新」。无线连接时，确认已完成配对，并核对「无线调试」主页当前显示的 IP 和连接端口。 |
+| RDP won't connect | Make sure Remote Desktop is enabled on the remote PC and that its address and port are reachable. Check your username, password, and remote sign-in permissions. |
+| RDP display is slow | Open the host's settings and choose **Smooth** under **Display and sharing → Picture quality**, then save and reconnect. In windowed mode, **Smooth** requests up to `1280 × 720`, **Balanced** requests up to `1920 × 1080`, and **High** uses the host's configured dimensions. |
+| The RDP resolution is different in full screen | OnRDP requests the local display's native pixel dimensions. The final resolution depends on the server. If the server does not support dynamic resolution, the session keeps its existing resolution. |
+| An Android device is missing | For USB, check that you accepted the debugging prompt, then click **Refresh**. For Wi-Fi, complete pairing and confirm the current IP address and connection port on the main **Wireless debugging** screen. |
 
-## 功能范围与开发
+## Platform support and development
 
-OnRDP 提供 Windows、macOS 和 Linux 桌面版。RDP 的音频、摄像头、驱动器、打印机、智能卡和 USB 重定向尚未接入。
+OnRDP is a desktop app for Windows, macOS, and Linux. RDP redirection for audio, cameras, drives, printers, smart cards, and USB devices is currently unavailable.
 
-源码运行、打包、硬件解码和原生依赖见开发指南。[开发指南](docs/development.md) · [第三方声明](THIRD_PARTY_NOTICES.md)
+The development guide covers building from source, packaging, hardware decoding, and native dependencies. [Development guide (Simplified Chinese)](docs/development.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
